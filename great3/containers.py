@@ -83,3 +83,23 @@ class Field(object):
         self.gal_cat    = files.read_gal_cat(**keys)
         self.star_image = files.read_star_image(**keys)
         self.star_cat   = files.read_star_cat(**keys)
+
+class DeepField(Field):
+    """
+    Same as Field but for the deep fields
+    """
+    def load_data(self, **keys):
+        """
+        Load 
+            - gal image
+            - gal catalog
+            - star image
+            - star catalog
+        """
+
+        self.gal_image  = files.read_deep_gal_image(**keys)
+        self.gal_cat    = files.read_deep_gal_cat(**keys)
+        self.star_image = files.read_deep_star_image(**keys)
+        self.star_cat   = files.read_deep_star_cat(**keys)
+
+

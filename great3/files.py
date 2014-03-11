@@ -167,3 +167,103 @@ def read_star_image(**keys):
     return data
 
 
+def get_deep_gal_cat_file(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'galaxy_catalog'
+    and epoch is not required
+    """
+    d=get_branch_dir(**keys)
+
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'deep_galaxy_catalog'
+    return get_file(**nkeys)
+
+def read_deep_gal_cat(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_galaxy_catalog'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_deep_gal_cat_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname, lower=True)
+    return data
+
+def get_deep_star_cat_file(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_star_catalog'
+    and epoch is not required
+    """
+    d=get_branch_dir(**keys)
+
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'deep_star_catalog'
+    return get_file(**nkeys)
+
+def read_deep_star_cat(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_star_catalog'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_deep_star_cat_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname, lower=True)
+    return data
+
+def get_deep_gal_image_file(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_image'
+    """
+    d=get_branch_dir(**keys)
+
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'deep_image'
+    return get_file(**nkeys)
+
+def read_deep_gal_image(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_image'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_deep_gal_image_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname)
+    return data
+
+
+def get_deep_star_image_file(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_starfield_image'
+    """
+    d=get_branch_dir(**keys)
+
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'deep_starfield_image'
+    return get_file(**nkeys)
+
+def read_deep_star_image(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'deep_starfield_image'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_deep_star_image_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname)
+    return data
+
+
