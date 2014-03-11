@@ -1,3 +1,11 @@
+"""
+File locations and reading for great3
+
+bounds are [x-23, x+25]
+
+remember y is row and x is col
+"""
+from __future__ import print_function
 import os
 
 def get_dir():
@@ -62,6 +70,7 @@ def get_file(**keys):
     fname = os.path.join(d, fname)
     return fname
 
+
 def get_gal_cat_file(**keys):
     """
     Same parameters as get_file but ftype is set to 'galaxy_catalog'
@@ -69,8 +78,23 @@ def get_gal_cat_file(**keys):
     """
     d=get_branch_dir(**keys)
 
-    keys['ftype'] = 'galaxy_catalog'
-    return get_file(**keys)
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'galaxy_catalog'
+    return get_file(**nkeys)
+
+def read_gal_cat(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'galaxy_catalog'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_gal_cat_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname, lower=True)
+    return data
 
 def get_star_cat_file(**keys):
     """
@@ -79,9 +103,23 @@ def get_star_cat_file(**keys):
     """
     d=get_branch_dir(**keys)
 
-    keys['ftype'] = 'star_catalog'
-    return get_file(**keys)
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'star_catalog'
+    return get_file(**nkeys)
 
+def read_star_cat(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'star_catalog'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_star_cat_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname, lower=True)
+    return data
 
 def get_gal_image_file(**keys):
     """
@@ -89,8 +127,24 @@ def get_gal_image_file(**keys):
     """
     d=get_branch_dir(**keys)
 
-    keys['ftype'] = 'image'
-    return get_file(**keys)
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'image'
+    return get_file(**nkeys)
+
+def read_gal_image(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'image'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_gal_image_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname)
+    return data
+
 
 def get_star_image_file(**keys):
     """
@@ -98,5 +152,22 @@ def get_star_image_file(**keys):
     """
     d=get_branch_dir(**keys)
 
-    keys['ftype'] = 'starfield_image'
-    return get_file(**keys)
+    nkeys={}
+    nkeys.update(keys)
+    nkeys['ftype'] = 'starfield_image'
+    return get_file(**nkeys)
+
+def read_star_image(**keys):
+    """
+    Same parameters as get_file but ftype is set to 'starfield_image'
+    and epoch is not required
+    """
+    import fitsio
+
+    fname=get_star_image_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname)
+    return data
+
+
