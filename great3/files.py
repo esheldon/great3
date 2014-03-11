@@ -11,19 +11,6 @@ def get_dir():
     d=os.environ['GREAT3_DATA_DIR']
     return d
 
-def get_skynoise_dir(**keys):
-    """
-    Get the directory holding the sky noise estimates
-    """
-    d=get_branch_dir(**keys)
-
-    d0 = get_dir()
-
-    d0_new = os.path.join(d0, 'skynoise')
-    d = d.replace(d0, d0_new)
-
-    return d
-
 def get_branch_dir(**keys):
     """
     $GREAT3_DATA_DIR/experiment/obs_type/shear_type
@@ -279,4 +266,87 @@ def read_deep_star_image(**keys):
     data=fitsio.read(fname)
     return data
 
+def get_skynoise_dir():
+    """
+    Get the directory holding the sky noise estimates
+    """
+    d = get_dir()
+    return os.path.join(d, 'skynoise')
 
+def get_skynoise_file(**keys):
+    """
+    Get the file holding the sky noise estimates for each subfield
+    """
+    d=get_skynoise_dir()
+
+    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-skynoise.fits'
+    fname = fname % keys
+
+    fname=os.path.join(d, fname)
+    return fname
+
+def read_skynoise(**keys):
+    """
+    Read the sky noise for the indicated field
+    """
+    import fitsio
+    fname=get_skynoise_file(**keys)
+    print("reading:",fname)
+    return fitsio.read(fname)
+
+def get_deep_skynoise_file(**keys):
+    """
+    Get the file holding the sky noise estimates for each subfield
+    """
+    fname=get_skynoise_file(**keys)
+    d=os.path.dirname(fname)
+    bn=os.path.basename(fname)
+
+    fname = 'deep-%s' % bn
+    fname = os.path.join(d, fname)
+
+    return fname
+
+def read_deep_skynoise(**keys):
+    """
+    Read the sky noise for the indicated field
+    """
+    import fitsio
+    fname=get_deep_skynoise_file(**keys)
+    print("reading:",fname)
+    return fitsio.read(fname)
+
+
+def get_skynoise_plot_dir():
+    """
+    dir to hold plots
+    """
+    d=get_skynoise_dir()
+    plot_dir=os.path.join(d, 'plots')
+    return plot_dir
+
+def get_skynoise_plot_file(**keys):
+    """
+    A plot of the fit
+    """
+
+    d=get_skynoise_plot_dir()
+
+    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-skynoise.eps'
+    fname = fname % keys
+
+    fname=os.path.join(d, fname)
+    return fname
+
+def get_deep_skynoise_plot_file(**keys):
+    """
+    plot of the fit
+    """
+    fname=get_skynoise_plot_file(**keys)
+    d=os.path.dirname(fname)
+    bn=os.path.basename(fname)
+
+    fname = 'deep-%s' % bn
+    fname = os.path.join(d, fname)
+
+    return fname

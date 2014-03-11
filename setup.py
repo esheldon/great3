@@ -2,9 +2,9 @@ import os
 import glob
 from distutils.core import setup
 
-#scripts=['nsim-average-outputs']
+scripts=['great3-calc-skynoise']
 
-#scripts=[os.path.join('bin',s) for s in scripts]
+scripts=[os.path.join('bin',s) for s in scripts]
 
 #conf_files=glob.glob('config/*.yaml')
 
@@ -19,6 +19,6 @@ setup(name="great3  ",
       license = "GPL",
       author="Erin Scott Sheldon",
       author_email="erin.sheldon@gmail.com",
-      #scripts=scripts,
+      scripts=scripts,
       #data_files=data_files,
       packages=['great3'])

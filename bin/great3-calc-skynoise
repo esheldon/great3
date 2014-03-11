@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+"""
+    %prog [options]
+"""
+
+import sys
+import great3
+
+from optparse import OptionParser
+parser=OptionParser(__doc__)
+
+parser.add_option('-e','--experiment',default=None,
+                  help='experiment, e.g. control')
+parser.add_option('-o','--obs-type',default=None,
+                  help='observation type, e.g. ground')
+parser.add_option('-s','--shear-type',default=None,
+                  help='shear type, e.g. constant')
+parser.add_option('-d','--deep',action='store_true',
+                  help='use the deep observations')
+
+
+
+def main():
+    options,args = parser.parse_args(sys.argv[1:])
+
+    if (options.experiment is None
+            or options.obs_type is None
+            or options.shear_type is None):
+        
+        parser.print_help()
+        sys.exit(45)
+
+    great3.skynoise.calc_branch_sky_noise(experiment=options.experiment,
+                                          obs_type=options.obs_type,
+                                          shear_type=options.shear_type,
+                                          deep=options.deep)
+
+main()
