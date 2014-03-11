@@ -21,6 +21,18 @@ class Field(object):
 
         self.load_data(**keys)
 
+    def get_ngal(self):
+        """
+        get the number of galaxies
+        """
+        return self.gal_cat.size
+
+    def get_nstar(self):
+        """
+        get the number of galaxies
+        """
+        return self.star_cat.size
+
     def get_gal_image(self, index):
         """
         Get the cutout centered on the indicated galaxy.
