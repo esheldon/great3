@@ -5,22 +5,25 @@ from __future__ import print_function
 import numpy
 
 from . import files
-from .containers import Field
+from .containers import Field, DeepField
 
 class FitterBase(object):
     def __init__(self, **keys):
         """
         parameters
         ----------
+        deep: bool, optional
+            If True, load a deep field
+
         See files.get_file.
+
         
         In short, experiment, obs_type, shear_type, subid, and optionally the
         epoch.
         """
 
-        self.field = Field(**keys)
+        self._set_field(**keys)
         self._set_obj_range(**keys)
-
         self._process_extra_keywords(**keys)
 
     def go(self):
@@ -38,8 +41,8 @@ class FitterBase(object):
                 # was checkpointed
                 continue
 
-            mindex = self.index_list[dindex]
-            print('index: %d:%d' % (mindex,last) )
+            index = self.index_list[dindex]
+            print('index: %d:%d' % (index,last) )
             self._do_fits(dindex)
 
             tm=time.time()-t0
@@ -109,5 +112,12 @@ class FitterBase(object):
             obj_range = [0,self.field.get_ngal()-1]
 
         self.index_list = numpy.arange(obj_range[0],obj_range[1]+1)
+
+    def _set_field(self, **keys):
+        deep=keys.get('deep',False)
+        if deep:
+            self.field = DeepField(**keys)
+        else:
+            self.field = Field(**keys)
 
 
