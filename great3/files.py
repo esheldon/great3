@@ -11,6 +11,19 @@ def get_dir():
     d=os.environ['GREAT3_DATA_DIR']
     return d
 
+def get_skynoise_dir(**keys):
+    """
+    Get the directory holding the sky noise estimates
+    """
+    d=get_branch_dir(**keys)
+
+    d0 = get_dir()
+
+    d0_new = os.path.join(d0, 'skynoise')
+    d = d.replace(d0, d0_new)
+
+    return d
+
 def get_branch_dir(**keys):
     """
     $GREAT3_DATA_DIR/experiment/obs_type/shear_type

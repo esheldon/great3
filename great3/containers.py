@@ -67,7 +67,7 @@ class Field(object):
 
         cutout = im[row_low:row_high, col_low:col_high].astype('f8')
 
-        cen=[23.5, 23.5]
+        cen=numpy.array( [23.5, 23.5] )
         return cutout, cen
 
     def load_data(self, **keys):

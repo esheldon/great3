@@ -4,10 +4,22 @@ Generic class for fitting, to be inherited
 from __future__ import print_function
 import numpy
 
-from . import files
 from .containers import Field, DeepField
 
-_CHECKPOINTS_DEFAULT_MINUTES=[10,30,60,90]
+CHECKPOINTS_DEFAULT_MINUTES=[10,30,60,90]
+
+# starting new values for these
+DEFVAL      = -9999
+PDEFVAL     =  9999
+BIG_DEFVAL  = -9.999e9
+BIG_PDEFVAL =  9.999e9
+
+# main flags field.  Everything from bit 1-29 is usable by the specific fitters
+# but most likely they will have their more specific flag fields
+
+PSF_FIT_FAILURE=2**0
+NO_ATTEMPT=2**30
+
 
 class FitterBase(object):
     def __init__(self, **keys):
@@ -28,6 +40,7 @@ class FitterBase(object):
         self._set_field()
         self._set_obj_range()
         self._finish_setup()
+        self._make_struct()
 
     def go(self):
         """
@@ -39,59 +52,54 @@ class FitterBase(object):
         last=self.index_list[-1]
         num=len(self.index_list)
 
-        for dindex in xrange(num):
-            if self.data['processed'][dindex]==1:
-                # was checkpointed
+        for sub_index in xrange(num):
+            # if 1, means we had a checkpoint
+            if self.data['processed'][sub_index]==1:
                 continue
 
-            index = self.index_list[dindex]
+            index = self.index_list[sub_index]
             print('index: %d:%d' % (index,last) )
-            self._do_fits(dindex)
+            self._do_fits(sub_index)
 
             tm=time.time()-t0
 
-            self._try_checkpoint(tm) # only at certain intervals
+            # checkpoint after specified intervals
+            self._try_checkpoint(tm)
 
         tm=time.time()-t0
         print("time:",tm)
         print("time per:",tm/num)
 
-    def _do_fits(self, dindex):
+    def _do_fits(self, sub_index):
         """
         Process the indicated object through the requested fits
         """
 
         # for checkpointing
-        self.data['processed'][dindex]=1
+        self.data['processed'][sub_index]=1
 
-        index = self.index_list[dindex]
+        # index into main catalog
+        index = self.index_list[sub_index]
 
-        # need to do this because we work on subset files
-        self.data['id'][dindex] = self.gal_cat['id'][index]
+        # the id from the original catalog
+        self.data['id'][sub_index] = self.gal_cat['id'][index]
 
-        psf_res=self._fit_psf(dindex)
-        if psf_res['flags'] != 0:
-            print("failed to fit psf")
-            self.data['flags'][dindex] = psf_res['flags']
-            return
-        
-        gal_res=self._fit_gal(dindex, psf_res)
+        res=self._process_object(sub_index)
+        self._copy_to_output(sub_index, psf_res, gal_res)
 
-        self._copy_to_output(dindex, psf_res, gal_res)
-
-    def _fit_psf(self, dindex):
+    def _fit_psf(self, sub_index):
         """
         over-ride this
         """
         raise RuntimeError("over-ride me")
 
-    def _fit_gal(self, dindex, psf_res):
+    def _fit_gal(self, sub_index, psf_res):
         """
         over-ride this
         """
         raise RuntimeError("over-ride me")
 
-    def _copy_to_output(self, dindex, psf_res, gal_res):
+    def _copy_to_output(self, sub_index, psf_res, gal_res):
         """
         over-ride this
         """
@@ -127,7 +135,7 @@ class FitterBase(object):
         """
         Set up the checkpoint times in minutes and data
         """
-        self.checkpoints = self.conf.get('checkpoints',_CHECKPOINTS_DEFAULT_MINUTES)
+        self.checkpoints = self.conf.get('checkpoints',CHECKPOINTS_DEFAULT_MINUTES)
         self.n_checkpoint    = len(self.checkpoints)
         self.checkpointed    = [0]*self.n_checkpoint
         self.checkpoint_file = self.conf.get('checkpoint_file',None)
@@ -180,5 +188,28 @@ class FitterBase(object):
                     icheck=i
 
         return should_checkpoint, icheck
+
+    def _get_default_dtype(self):
+        """
+        dtype for fields always part of the output
+        """
+
+        dt=[('id','i8'),
+            ('processed','i2'),
+            ('flags','i4')]
+
+        return dt
+
+    def _make_struct(self):
+        """
+        Create the output structure
+        """
+        raise RuntimeError("over-ride me")
+
+def srandu(num=None):
+    """
+    Generate random numbers in the symmetric distribution [-1,1]
+    """
+    return 2*(numpy.random.random(num)-0.5)
 
 

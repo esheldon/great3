@@ -1,0 +1,5 @@
+# arcsec/pixel
+PIXEL_SCALE=0.2
+
+NSUB=200
+NSUB_DEEP=5
