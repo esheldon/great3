@@ -98,7 +98,7 @@ class FitterBase(object):
         raise RuntimeError("over-ride me")
 
 
-    def _process_extra_keywords(self, **keys):
+    def _finish_setup(self):
         """
         over-ride this
         """
@@ -122,5 +122,63 @@ class FitterBase(object):
             self.field = DeepField(**self.conf)
         else:
             self.field = Field(**self.conf)
+
+    def _setup_checkpoints(self):
+        """
+        Set up the checkpoint times in minutes and data
+        """
+        self.checkpoints = self.conf.get('checkpoints',_CHECKPOINTS_DEFAULT_MINUTES)
+        self.n_checkpoint    = len(self.checkpoints)
+        self.checkpointed    = [0]*self.n_checkpoint
+        self.checkpoint_file = self.conf.get('checkpoint_file',None)
+
+        self._set_checkpoint_data()
+
+        if self.checkpoint_file is not None:
+            self.do_checkpoint=True
+        else:
+            self.do_checkpoint=False
+
+    def _set_checkpoint_data(self):
+        """
+        See if checkpoint data was sent
+        """
+        self._checkpoint_data=self.conf.get('checkpoint_data',None)
+        if self._checkpoint_data is not None:
+            self.data=self._checkpoint_data['data']
+
+    def _try_checkpoint(self, tm):
+        """
+        Checkpoint at certain intervals.  
+        Potentially modified self.checkpointed
+        """
+
+        should_checkpoint, icheck = self._should_checkpoint(tm)
+
+        if should_checkpoint:
+            self._write_checkpoint(tm)
+            self.checkpointed[icheck]=1
+
+    def _should_checkpoint(self, tm):
+        """
+        Should we write a checkpoint file?
+        """
+
+        should_checkpoint=False
+        icheck=-1
+
+        if self.do_checkpoint:
+            tm_minutes=tm/60
+
+            for i in xrange(self.n_checkpoint):
+
+                checkpoint=self.checkpoints[i]
+                checkpointed=self.checkpointed[i]
+
+                if tm_minutes > checkpoint and not checkpointed:
+                    should_checkpoint=True
+                    icheck=i
+
+        return should_checkpoint, icheck
 
 
