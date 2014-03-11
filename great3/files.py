@@ -1,9 +1,5 @@
 """
 File locations and reading for great3
-
-bounds are [x-23, x+25]
-
-remember y is row and x is col
 """
 from __future__ import print_function
 import os

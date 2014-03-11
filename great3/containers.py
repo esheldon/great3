@@ -2,6 +2,7 @@
 Containers for great3 data for easier use
 """
 from __future__ import print_function
+import numpy
 
 from . import files
 
@@ -17,8 +18,6 @@ class Field(object):
 
         the gal image and cat, and star image and cat are read.
         """
-
-        self.cutout_size=48
 
         self.load_data(**keys)
 
@@ -54,8 +53,7 @@ class Field(object):
         col_low  = col - 23
         col_high = col + 25
 
-        cutout = im[row_low:row_high, col_low:col_high].copy()
-        cutout = numpy.array(cutout, dtype='f8', copy=False)
+        cutout = im[row_low:row_high, col_low:col_high].astype('f8')
 
         cen=[23.5, 23.5]
         return cutout, cen
@@ -69,7 +67,7 @@ class Field(object):
             - star catalog
         """
 
-        self.gal_image  = files.read_gal_image(**nkeys)
-        self.gal_cat    = files.read_gal_cat(**nkeys)
-        self.star_image = files.read_star_image(**nkeys)
-        self.star_cat   = files.read_star_cat(**nkeys)
+        self.gal_image  = files.read_gal_image(**keys)
+        self.gal_cat    = files.read_gal_cat(**keys)
+        self.star_image = files.read_star_image(**keys)
+        self.star_cat   = files.read_star_cat(**keys)
