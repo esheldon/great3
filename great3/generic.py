@@ -7,6 +7,8 @@ import numpy
 from . import files
 from .containers import Field, DeepField
 
+_CHECKPOINTS_DEFAULT_MINUTES=[10,30,60,90]
+
 class FitterBase(object):
     def __init__(self, **keys):
         """
@@ -22,9 +24,10 @@ class FitterBase(object):
         epoch.
         """
 
-        self._set_field(**keys)
-        self._set_obj_range(**keys)
-        self._process_extra_keywords(**keys)
+        self.conf=keys
+        self._set_field()
+        self._set_obj_range()
+        self._finish_setup()
 
     def go(self):
         """
@@ -101,23 +104,23 @@ class FitterBase(object):
         """
         raise RuntimeError("over-ride me")
 
-    def _set_obj_range(**keys):
+    def _set_obj_range(self):
         """
         The range of objects to process. 
         """
 
         # this is inclusive
-        obj_range=keys.get('obj_range',None)
+        obj_range=self.conf.get('obj_range',None)
         if obj_range is None:
             obj_range = [0,self.field.get_ngal()-1]
 
         self.index_list = numpy.arange(obj_range[0],obj_range[1]+1)
 
-    def _set_field(self, **keys):
-        deep=keys.get('deep',False)
+    def _set_field(self):
+        deep=self.conf.get('deep',False)
         if deep:
-            self.field = DeepField(**keys)
+            self.field = DeepField(**self.conf)
         else:
-            self.field = Field(**keys)
+            self.field = Field(**self.conf)
 
 
