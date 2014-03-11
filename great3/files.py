@@ -45,14 +45,18 @@ def get_file(**keys):
     subid: number
         Requird keyword. e.g. 12
     epoch: number
-        Optional keyword.  Default 0.
+        Optional keyword.  Default 0 for image types, none for catalogs.
     """
     d=get_branch_dir(**keys)
 
     if 'epoch' not in keys:
         keys['epoch'] = 0
 
-    fname='%(ftype)s-%(subid)03d-%(epoch)d.fits' 
+    if 'catalog' in keys['ftype']:
+        fname='%(ftype)s-%(subid)03d.fits' 
+    else:
+        fname='%(ftype)s-%(subid)03d-%(epoch)d.fits' 
+
     fname = fname % keys
 
     fname = os.path.join(d, fname)
@@ -61,6 +65,7 @@ def get_file(**keys):
 def get_gal_cat_file(**keys):
     """
     Same parameters as get_file but ftype is set to 'galaxy_catalog'
+    and epoch is not required
     """
     d=get_branch_dir(**keys)
 
@@ -70,6 +75,7 @@ def get_gal_cat_file(**keys):
 def get_star_cat_file(**keys):
     """
     Same parameters as get_file but ftype is set to 'star_catalog'
+    and epoch is not required
     """
     d=get_branch_dir(**keys)
 
