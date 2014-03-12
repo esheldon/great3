@@ -45,7 +45,7 @@ class FitterBase(object):
 
             index = self.index_list[sub_index]
             print('index: %d:%d' % (index,last) )
-            self._do_fits(sub_index)
+            self._do_all_fits(sub_index)
 
             tm=time.time()-t0
 
@@ -56,9 +56,12 @@ class FitterBase(object):
         print("time:",tm)
         print("time per:",tm/num)
 
-    def _do_fits(self, sub_index):
+    def _do_all_fits(self, sub_index):
         """
         Process the indicated object through the requested fits
+
+        First some setup, then call out for the actual processing,
+        then copy the result
         """
 
         # for checkpointing
