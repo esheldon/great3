@@ -18,6 +18,10 @@ class RGFitter(object):
         gal_image,gal_cen = self.fields.get_gal_image(index)
         psf_image,psf_cen = self.fields.get_star_image(index)
 
+        res=self._run_regauss(gal_image, gal_cen,
+                              psf_image, psf_cen)
+        return res
+
     def _run_regauss(self,
                      gal_image, gal_cen,
                      psf_image, psf_cen):
@@ -44,36 +48,13 @@ class RGFitter(object):
 
             res = rg['rgcorrstats']
             if res is not None and res['flags'] == 0:
-                e1,e2,R=res['e1'],res['e2'],res['R']
-                if (abs(e1) < RG_MAX_ELLIP
-                        and abs(e2) < RG_MAX_ELLIP
-                        and R > RG_MIN_R
-                        and R <  RG_MAX_R):
-
-                res['err'] = rg['rgstats']['uncer']/R
+                # error accounting for the 1/R scaling
+                res['err_corr'] = rg['rgstats']['uncer']/R
+                res['flags'] = 0
                 break
         
         if res is None:
-            res={'flags':1}
-
-        if res['flags'] == 0: 
-            res['err']
-            res['err']=rg['rgstats']['uncer']/R
-            e1,e2,R=res['e1'],res['e2'],res['R']
-            if (abs(e1) > MAX_ELLIP
-                    or abs(e2) > MAX_ELLIP
-                    or R <= MIN_R
-                    or R >  MAX_R):
-                res['flags']=1
-            else:
-                # err is per component.  Boost by 1/R
-                res['err']=rg['rgstats']['uncer']/R
-                weight,ssh=self._get_weight_and_ssh(res['e1'],
-                                                    res['e2'],
-                                                    res['err'])
-
-                res['weight'] = weight
-                res['ssh'] = ssh
+            res={'flags':RG_FAILURE}
 
         return res
 
@@ -98,6 +79,20 @@ class RGFitter(object):
         # how many times to retry the fit
         self.ntry = conf.get('ntry',5)
 
+    def _copy_to_output(self, sub_index, res):
+        """
+        Copy to the output structure
+        """
+        data=self.data
+
+        data['flags'][sub_index] = res['flags']
+
+        if res['flags']==0:
+            data['e1'][sub_index] = res['e1']
+            data['e2'][sub_index] = res['e2']
+            data['err'][sub_index] = res['err_corr']
+            data['R'][sub_index] = res['R']
+
     def _make_struct(self):
         """
         Make the output structure
@@ -110,10 +105,7 @@ class RGFitter(object):
         dt += [('e1','f8'),
                ('e2','f8'),
                ('err','f8'),
-               ('ssh','f8'),
-               ('R','f8'),
-               ('weight','f8'),
-               ('rg_flags','i4')]
+               ('R','f8')]
 
         data=numpy.zeros(num, dtype=dt)
 
@@ -123,10 +115,7 @@ class RGFitter(object):
         data['e1']  = DEFVAL
         data['e2']  = DEFVAL
         data['err'] = PDEFVAL
-        data['ssh'] = DEFVAL
         data['R']   = DEFVAL
-        data['weight']   = 0.0
-        data['rg_flags'] = NO_ATTEMPT
 
         self.data=data
 

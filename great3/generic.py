@@ -5,21 +5,7 @@ from __future__ import print_function
 import numpy
 
 from .containers import Field, DeepField
-
-CHECKPOINTS_DEFAULT_MINUTES=[10,30,60,90]
-
-# starting new values for these
-DEFVAL      = -9999
-PDEFVAL     =  9999
-BIG_DEFVAL  = -9.999e9
-BIG_PDEFVAL =  9.999e9
-
-# main flags field.  Everything from bit 1-29 is usable by the specific fitters
-# but most likely they will have their more specific flag fields
-
-PSF_FIT_FAILURE=2**0
-NO_ATTEMPT=2**30
-
+from .constants import *
 
 class FitterBase(object):
     def __init__(self, **keys):
@@ -85,7 +71,7 @@ class FitterBase(object):
         self.data['id'][sub_index] = self.gal_cat['id'][index]
 
         res=self._process_object(sub_index)
-        self._copy_to_output(sub_index, psf_res, gal_res)
+        self._copy_to_output(sub_index, res)
 
     def _fit_psf(self, sub_index):
         """
@@ -99,7 +85,7 @@ class FitterBase(object):
         """
         raise RuntimeError("over-ride me")
 
-    def _copy_to_output(self, sub_index, psf_res, gal_res):
+    def _copy_to_output(self, sub_index, res):
         """
         over-ride this
         """
