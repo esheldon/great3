@@ -2,8 +2,11 @@
 Generic class for fitting, to be inherited
 """
 from __future__ import print_function
+
+import time
 import numpy
 
+from . import files
 from .containers import Field, DeepField
 from .constants import *
 
@@ -27,6 +30,13 @@ class FitterBase(object):
         self._set_obj_range()
         self._finish_setup()
         self._make_struct()
+        self._setup_checkpoints()
+
+    def get_data(self):
+        """
+        Get the data structure
+        """
+        return self.data
 
     def go(self):
         """
@@ -71,7 +81,7 @@ class FitterBase(object):
         index = self.index_list[sub_index]
 
         # the id from the original catalog
-        self.data['id'][sub_index] = self.gal_cat['id'][index]
+        self.data['id'][sub_index] = self.field.gal_cat['id'][index]
 
         res=self._process_object(sub_index)
         if res['flags']==0:
@@ -120,10 +130,10 @@ class FitterBase(object):
         deep=self.conf.get('deep',False)
         if deep:
             self.field = DeepField(**self.conf)
-            all_skysig = files.read_deep_skynoise_file(**self.conf)
+            all_skysig = files.read_deep_skynoise(**self.conf)
         else:
             self.field = Field(**self.conf)
-            all_skysig = files.read_skynoise_file(**self.conf)
+            all_skysig = files.read_skynoise(**self.conf)
 
         self.skysig = all_skysig['skysig'][self.conf['subid']]
         print("skysig:",self.skysig)

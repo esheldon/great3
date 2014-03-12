@@ -1,13 +1,14 @@
 from __future__ import print_function
 import numpy
+from numpy.random import random as randu
 
+from . import files
 from .generic import *
 from .constants import *
 
-import admom
 
 
-class RGFitter(object):
+class RGFitter(FitterBase):
 
     def _process_object(self, sub_index):
         """
@@ -15,8 +16,8 @@ class RGFitter(object):
         """
         index = self.index_list[sub_index]
 
-        gal_image,gal_cen = self.fields.get_gal_image(index)
-        psf_image,psf_cen = self.fields.get_star_image(index)
+        gal_image,gal_cen = self.field.get_gal_image(index)
+        psf_image,psf_cen = self.field.get_star_image(0)
 
         res=self._run_regauss(gal_image, gal_cen,
                               psf_image, psf_cen)
@@ -25,6 +26,8 @@ class RGFitter(object):
     def _run_regauss(self,
                      gal_image, gal_cen,
                      psf_image, psf_cen):
+
+        import admom
 
         ntry=self.ntry
         for i in xrange(ntry):
@@ -46,7 +49,8 @@ class RGFitter(object):
             res = rg['rgcorrstats']
             if res is not None and res['flags'] == 0:
                 # error accounting for the 1/R scaling
-                res['err_corr'] = rg['rgstats']['uncer']/R
+                R = res['R']
+                res['err'] = rg['rgstats']['uncer']/R
                 res['flags'] = 0
                 break
         
@@ -54,6 +58,7 @@ class RGFitter(object):
             print("    regauss failed")
             res={'flags':RG_FAILURE}
 
+        res['ntry'] = i+1
         return res
 
     def _get_guesses(self, gal_cen, psf_cen):
@@ -61,8 +66,8 @@ class RGFitter(object):
         psf_cen_guess = psf_cen + self.guess_width_cen*srandu(2)
 
         psf_irr_guess = self.guess_psf_irr*(1.0+0.01*srandu())
-        # guess gal bigger
-        gal_irr_guess = 1.4*self.guess_psf_irr*(1.0+0.01*srandu())
+        # guess gal bigger.  Note random here is [0,1]
+        gal_irr_guess = self.guess_psf_irr*(1.0+1.0*randu())
 
         return cen_guess, psf_cen_guess, psf_irr_guess, gal_irr_guess
 
@@ -101,11 +106,12 @@ class RGFitter(object):
         data=self.data
 
         data['flags'][sub_index] = res['flags']
+        data['ntry'][sub_index] = res['ntry']
 
         if res['flags']==0:
             data['e1'][sub_index]  = res['e1']
             data['e2'][sub_index]  = res['e2']
-            data['err'][sub_index] = res['err_corr']
+            data['err'][sub_index] = res['err']
             data['R'][sub_index]   = res['R']
 
     def _make_struct(self):
@@ -120,7 +126,8 @@ class RGFitter(object):
         dt += [('e1','f8'),
                ('e2','f8'),
                ('err','f8'),
-               ('R','f8')]
+               ('R','f8'),
+               ('ntry','i4')]
 
         data=numpy.zeros(num, dtype=dt)
 
@@ -133,4 +140,96 @@ class RGFitter(object):
         data['R']   = DEFVAL
 
         self.data=data
+
+_SN2={'exp':None}
+def get_sn2():
+    """
+    get the shape noise per component
+    """
+    if _SN2['exp'] is None:
+        import ngmix
+        g_prior=ngmix.priors.make_gprior_cosmos_exp()
+        n=10000
+        g1,g2 = g_prior.sample2d(n)
+        e1=g1.copy()
+        e2=g2.copy()
+        for i in xrange(n):
+            e1[i], e2[i] = ngmix.shape.g1g2_to_e1e2(g1[i],g2[i])
+        _SN2['exp'] = e1.var()
+
+        print('SN2:',_SN2['exp'])
+
+    return _SN2['exp']
+
+def select(data,
+           max_ellip=RG_MAX_ELLIP,
+           min_R=RG_MIN_R,
+           max_R=RG_MAX_R):
+    w,=numpy.where(  (data['flags'] == 0)
+                   & (numpy.abs(data['e1']) < max_ellip)
+                   & (numpy.abs(data['e2']) < max_ellip)
+                   & (data['R'] > min_R)
+                   & (data['R'] < max_R) )
+    return w
+
+def get_shear(data, shape_noise=True):
+    """
+    If shape_noise==False then it is assumed there is
+    no shape noise (e.g. a ring) so only the errors are used
+    """
+    from esutil.stat import wmom
+
+    wt, ssh = get_weight_and_ssh(data['e1'], data['e2'], data['err'])
+
+    e1mean,e1err = wmom(data['e1'], wt, calcerr=True)
+    e2mean,e2err = wmom(data['e2'], wt, calcerr=True)
+    R,Rerr = wmom(data['R'], wt, calcerr=True)
+    ssh,ssherr = wmom(ssh, wt, calcerr=True)
+
+    if not shape_noise:
+        err2=err**2
+        e1ivar = ( 1.0/err2 ).sum()
+        e1err = numpy.sqrt( 1.0/e1ivar )
+        e2err = e1err
+
+    g1=0.5*e1mean/ssh
+    g2=0.5*e2mean/ssh
+
+    g1err = 0.5*e1err/ssh
+    g2err = 0.5*e2err/ssh
+
+    out={'g1':g1,
+         'g1err':g1err,
+         'g2':g2,
+         'g2err':g2err,
+         'ssh':ssh,
+         'R':R,
+         'Rerr':Rerr}
+    return out
+
+def get_weight_and_ssh(e1, e2, err):
+    """
+    err is per component, as is the shape noise
+    """
+    esq = e1**2 + e2**2
+    err2=err**2
+
+    # for responsivity. 
+    #   Shear = 0.5 * sum(w*e1)/sum(w)/R
+    # where
+    #   ssh = sum(w*ssh)/sum(w)
+    # this shape noise is per component
+
+    sn2 = get_sn2() 
+
+    # coefficients (eq 5-35 Bern02) 
+
+    f = sn2/(sn2 + err2)
+
+    ssh = 1.0 - (1-f)*sn2 - 0.5*f**2 * esq
+
+    weight = 1.0/(sn2 + err2)
+
+    return weight, ssh
+
 

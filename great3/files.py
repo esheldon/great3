@@ -350,3 +350,43 @@ def get_deep_skynoise_plot_file(**keys):
     fname = os.path.join(d, fname)
 
     return fname
+
+def get_run_dir(**keys):
+    """
+    Get the directory holding the run
+    """
+    d = get_dir()
+    return os.path.join(d, 'processing', keys['run'])
+
+def get_output_dir(**keys):
+    """
+    Get the directory holding the outputs
+    """
+    rd=get_run_dir(**keys)
+
+    return os.path.join(rd, 'output')
+
+def get_output_file(**keys):
+    """
+    Get output file
+    """
+    d=get_output_dir(**keys)
+
+    if 'obj_range' in keys:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s-%(start)05d-%(end)05d.fits'
+    else:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s.fits'
+
+    fname = fname % keys
+
+    return os.path.join(d, fname)
+
+def get_condor_dir(**keys):
+    """
+    Get the directory holding the condor files
+    """
+    rd=get_run_dir(**keys)
+
+    return os.path.join(rd, 'condor')
+
+

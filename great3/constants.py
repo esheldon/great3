@@ -21,7 +21,7 @@ NO_ATTEMPT=2**30
 # for rg
 RG_MAX_ELLIP = 4.0
 RG_MAX_R     = 1.0
-RG_MIN_R     = 0.01
+RG_MIN_R     = 0.4
 
 RG_FAILURE = 2**1
 
