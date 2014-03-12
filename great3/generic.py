@@ -71,6 +71,9 @@ class FitterBase(object):
         self.data['id'][sub_index] = self.gal_cat['id'][index]
 
         res=self._process_object(sub_index)
+        if res['flags']==0:
+            self.print_res(res)
+
         self._copy_to_output(sub_index, res)
 
     def _fit_psf(self, sub_index):

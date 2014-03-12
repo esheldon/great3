@@ -66,6 +66,14 @@ class RGFitter(object):
 
         return cen_guess, psf_cen_guess, psf_irr_guess, gal_irr_guess
 
+    def print_res(self,res):
+        """
+        Print some stats from the fit
+        """
+        mess='    %(e1).6g %(e2).6g +/- %(err).6g'
+        mess = mess % res
+        print(mess)
+
     def _finish_setup(self):
         """
         Process the rest of the input
