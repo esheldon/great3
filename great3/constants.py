@@ -18,11 +18,7 @@ BIG_PDEFVAL =  9.999e9
 PSF_FIT_FAILURE=2**0
 NO_ATTEMPT=2**30
 
-# for rg
-RG_MAX_ELLIP = 4.0
-RG_MAX_R     = 1.0
-RG_MIN_R     = 0.4
-
+# for regauss
 RG_FAILURE = 2**1
 
 # default checkpoint configuration

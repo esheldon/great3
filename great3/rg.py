@@ -141,48 +141,43 @@ class RGFitter(FitterBase):
 
         self.data=data
 
-_SN2={'exp':None,'dev':None}
-def get_shape_noise(type):
+
+def select_and_calc_shear(data, **cuts):
     """
-    get the shape noise per component
+    Make selections and calculate the mean shear
     """
-    if _SN2['type'] is None:
+    w=select(data, **cuts)
+    res=get_shear(data[w], **cuts)
+    return res
 
-        import ngmix
-        
-        if type=='exp':
-            g_prior=ngmix.priors.make_gprior_cosmos_exp()
-        elif type=='dev':
-            g_prior=ngmix.priors.make_gprior_cosmos_dev()
-        else:
-            raise ValueError("bad shape noise type: '%s'" % type)
+def select(data,**keys):
+    """
+    parameters
+    ----------
+    data:
+        The output of regauss, e.g. from using read_output
+    max_ellip:
+        Maximum ellipticity in either component
+    max_err:
+        Maximum ellipticity error.
+    R_range:
+        Two-element sequence for the range
+    """
 
-        n=10000
-        g1,g2 = g_prior.sample2d(n)
-        e1=g1.copy()
-        e2=g2.copy()
-        for i in xrange(n):
-            e1[i], e2[i] = ngmix.shape.g1g2_to_e1e2(g1[i],g2[i])
-        _SN2['exp'] = e1.var()
+    max_ellip=keys['max_ellip']
+    max_err=keys['max_err']
+    R_range=keys['R_range']
 
-        print('SN2:',_SN2['exp'])
-
-    return _SN2['type']
-
-def select(data,
-           max_ellip=RG_MAX_ELLIP,
-           min_R=RG_MIN_R,
-           max_R=RG_MAX_R):
     w,=numpy.where(  (data['flags'] == 0)
                    & (numpy.abs(data['e1']) < max_ellip)
                    & (numpy.abs(data['e2']) < max_ellip)
-                   & (data['R'] > min_R)
-                   & (data['R'] < max_R) )
+                   & (data['err'] < max_err)
+                   & (data['R'] > R_range[0])
+                   & (data['R'] < R_range[1]) )
     return w
 
-def get_shear(data,
-              include_shape_noise_err=True,
-              shape_noise_type='exp'):
+
+def get_shear(data, **keys):
     """
     parameters
     ----------
@@ -216,10 +211,14 @@ def get_shear(data,
     g1err = 0.5*e1err/ssh
     g2err = 0.5*e2err/ssh
 
-    out={'g1':g1,
-         'g1err':g1err,
-         'g2':g2,
-         'g2err':g2err,
+    shear=numpy.array([g1,g2])
+    shear_err=numpy.array([g1err,g2err])
+    shear_cov=numpy.zeros( (2,2) )
+    shear_cov[0,0]=g1err**2
+    shear_cov[1,1]=g2err**2
+
+    out={'shear':shear,
+         'shear_cov':shear_cov,
          'ssh':ssh,
          'R':R,
          'Rerr':Rerr}
@@ -249,5 +248,33 @@ def get_weight_and_ssh(e1, e2, err, shape_noise_type='exp'):
     weight = 1.0/(sn2 + err2)
 
     return weight, ssh
+
+_SN2={'exp':None,'dev':None}
+def get_shape_noise(type):
+    """
+    get the shape noise per component
+    """
+    if _SN2[type] is None:
+
+        import ngmix
+        
+        if type=='exp':
+            g_prior=ngmix.priors.make_gprior_cosmos_exp()
+        elif type=='dev':
+            g_prior=ngmix.priors.make_gprior_cosmos_dev()
+        else:
+            raise ValueError("bad shape noise type: '%s'" % type)
+
+        n=100000
+        g1,g2 = g_prior.sample2d(n)
+        e1=g1.copy()
+        e2=g2.copy()
+        for i in xrange(n):
+            e1[i], e2[i] = ngmix.shape.g1g2_to_e1e2(g1[i],g2[i])
+        _SN2[type] = e1.var()
+
+        print("SN2['%s']: %s" % (type,_SN2[type]))
+
+    return _SN2[type]
 
 

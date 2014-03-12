@@ -4,6 +4,18 @@ File locations and reading for great3
 from __future__ import print_function
 import os
 
+def get_nsub(**keys):
+    """
+    Get the number of sub-field
+    """
+    from . import constants
+
+    deep=keys.get('deep',False)
+    if deep:
+        return constants.NSUB_DEEP
+    else:
+        return constants.NSUB
+
 def get_dir():
     """
     The GREAT3_DATA_DIR environment variable must be set
@@ -369,6 +381,21 @@ def get_output_dir(**keys):
 def get_output_file(**keys):
     """
     Get output file
+
+    parameters
+    ----------
+    experiment: string
+        Required keyword.  e.g. control, real
+    obs_type: string
+        Required keyword. e.g. ground, space
+    shear_type: string
+        Required keyword.  e.g. constant
+    run: string
+        Required keyword, the run id
+    start: int, optional
+        Star for obj range
+    end: int, optional
+        End for obj range
     """
     d=get_output_dir(**keys)
 
@@ -387,6 +414,19 @@ def get_output_file(**keys):
     fname = fname % nkeys
 
     return os.path.join(d, fname)
+
+def read_output(**keys):
+    """
+    Same parameters as for get_output_file
+    """
+    import fitsio
+
+    fname=get_output_file(**keys)
+    print('reading:',fname)
+
+    data=fitsio.read(fname)
+    return data
+
 
 def get_condor_dir(**keys):
     """
