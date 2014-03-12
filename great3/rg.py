@@ -37,17 +37,28 @@ class RGFitter(object):
                                psf_image,
                                psf_cen_guess[0],
                                psf_cen_guess[1],
-                               guess_psf=T_guess_psf/2.,
-                               guess=T_guess_obj/2.,
+                               guess_psf=psf_irr_guess,
+                               guess=gal_irr_guess,
                                sigsky=self.skysig)
+            rg.do_all()
 
-        rg.do_all()
-        res=rg['rgcorrstats']
-        if res== None:
-            #pprint(rg)
-            #stop
+            res = rg['rgcorrstats']
+            if res is not None and res['flags'] == 0:
+                e1,e2,R=res['e1'],res['e2'],res['R']
+                if (abs(e1) < RG_MAX_ELLIP
+                        and abs(e2) < RG_MAX_ELLIP
+                        and R > RG_MIN_R
+                        and R <  RG_MAX_R):
+
+                res['err'] = rg['rgstats']['uncer']/R
+                break
+        
+        if res is None:
             res={'flags':1}
-        else:
+
+        if res['flags'] == 0: 
+            res['err']
+            res['err']=rg['rgstats']['uncer']/R
             e1,e2,R=res['e1'],res['e2'],res['R']
             if (abs(e1) > MAX_ELLIP
                     or abs(e2) > MAX_ELLIP

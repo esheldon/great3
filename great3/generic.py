@@ -37,7 +37,7 @@ class FitterBase(object):
         """
 
         self.conf=keys
-        self._set_field()
+        self._set_field_data()
         self._set_obj_range()
         self._finish_setup()
         self._make_struct()
@@ -124,12 +124,17 @@ class FitterBase(object):
 
         self.index_list = numpy.arange(obj_range[0],obj_range[1]+1)
 
-    def _set_field(self):
+    def _set_field_data(self):
         deep=self.conf.get('deep',False)
         if deep:
             self.field = DeepField(**self.conf)
+            all_skysig = files.read_deep_skynoise_file(**self.conf)
         else:
             self.field = Field(**self.conf)
+            all_skysig = files.read_skynoise_file(**self.conf)
+
+        self.skysig = all_skysig['skysig'][self.conf['subid']]
+        print("skysig:",self.skysig)
 
     def _setup_checkpoints(self):
         """

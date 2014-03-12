@@ -3,3 +3,10 @@ PIXEL_SCALE=0.2
 
 NSUB=200
 NSUB_DEEP=5
+
+# for rg
+RG_MAX_ELLIP=4.0
+RG_MAX_R = 1.0
+RG_MIN_R = 0.01
+
+
