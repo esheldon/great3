@@ -28,12 +28,9 @@ class RGFitter(object):
 
         ntry=self.ntry
         for i in xrange(ntry):
-            cen_guess = gal_cen + self.guess_width_cen*srandu(2)
-            psf_cen_guess = psf_cen + self.guess_width_cen*srandu(2)
 
-            psf_irr_guess = self.guess_psf_irr*(1.0+0.01*srandu())
-            # guess gal bigger
-            gal_irr_guess = 1.4*self.guess_psf_irr*(1.0+0.01*srandu())
+            cen_guess, psf_cen_guess, psf_irr_guess, gal_irr_guess = \
+                    self._get_guesses(gal_cen, psf_cen)
 
             rg = admom.ReGauss(gal_image,
                                cen_guess[0],
@@ -54,10 +51,20 @@ class RGFitter(object):
                 break
         
         if res is None:
+            print("    regauss failed")
             res={'flags':RG_FAILURE}
 
         return res
 
+    def _get_guesses(self, gal_cen, psf_cen):
+        cen_guess = gal_cen + self.guess_width_cen*srandu(2)
+        psf_cen_guess = psf_cen + self.guess_width_cen*srandu(2)
+
+        psf_irr_guess = self.guess_psf_irr*(1.0+0.01*srandu())
+        # guess gal bigger
+        gal_irr_guess = 1.4*self.guess_psf_irr*(1.0+0.01*srandu())
+
+        return cen_guess, psf_cen_guess, psf_irr_guess, gal_irr_guess
 
     def _finish_setup(self):
         """
@@ -88,10 +95,10 @@ class RGFitter(object):
         data['flags'][sub_index] = res['flags']
 
         if res['flags']==0:
-            data['e1'][sub_index] = res['e1']
-            data['e2'][sub_index] = res['e2']
+            data['e1'][sub_index]  = res['e1']
+            data['e2'][sub_index]  = res['e2']
             data['err'][sub_index] = res['err_corr']
-            data['R'][sub_index] = res['R']
+            data['R'][sub_index]   = res['R']
 
     def _make_struct(self):
         """
