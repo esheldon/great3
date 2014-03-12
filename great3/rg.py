@@ -48,10 +48,27 @@ class RGFitter(FitterBase):
 
             res = rg['rgcorrstats']
             if res is not None and res['flags'] == 0:
+                ams=rg['imstats']
+                rgs = rg['rgstats']
+                pstats = rg['psfstats']
+
                 # error accounting for the 1/R scaling
                 R = res['R']
                 res['err'] = rg['rgstats']['uncer']/R
+
+
                 res['flags'] = 0
+
+                res['row_am'] = ams['wrow']
+                res['col_am'] = ams['wcol']
+                res['row_rg'] = rgs['wrow']
+                res['col_rg'] = rgs['wcol']
+
+                res['T'] = rgs['Irr'] + rgs['Icc']
+
+                res['psf_T'] = pstats['Irr']+pstats['Icc']
+                res['psf_e1'] = pstats['e1']
+                res['psf_e2'] = pstats['e2']
                 break
         
         if res is None:
@@ -109,10 +126,21 @@ class RGFitter(FitterBase):
         data['ntry'][sub_index] = res['ntry']
 
         if res['flags']==0:
+            data['row_am'][sub_index] = res['row_am']
+            data['col_am'][sub_index] = res['col_am']
+            data['row_rg'][sub_index] = res['row_rg']
+            data['col_rg'][sub_index] = res['col_rg']
+
+
             data['e1'][sub_index]  = res['e1']
             data['e2'][sub_index]  = res['e2']
             data['err'][sub_index] = res['err']
             data['R'][sub_index]   = res['R']
+            data['T'][sub_index]   = res['T']
+
+            data['psf_e1'][sub_index] = res['psf_e1']
+            data['psf_e2'][sub_index] = res['psf_e2']
+            data['psf_T'][sub_index] = res['psf_T']
 
     def _make_struct(self):
         """
@@ -123,10 +151,18 @@ class RGFitter(FitterBase):
 
         dt = self._get_default_dtype()
         
-        dt += [('e1','f8'),
+        dt += [('row_am','f8'),
+               ('col_am','f8'),
+               ('row_rg','f8'),
+               ('col_rg','f8'),
+               ('e1','f8'),
                ('e2','f8'),
                ('err','f8'),
+               ('T','f8'),
                ('R','f8'),
+               ('psf_e1','f8'),
+               ('psf_e2','f8'),
+               ('psf_T','f8'),
                ('ntry','i4')]
 
         data=numpy.zeros(num, dtype=dt)
@@ -134,10 +170,20 @@ class RGFitter(FitterBase):
         # from default dtype.
         data['flags'] = NO_ATTEMPT
 
+        data['row_am'] = DEFVAL
+        data['col_am'] = DEFVAL
+        data['row_rg'] = DEFVAL
+        data['col_rg'] = DEFVAL
+
         data['e1']  = DEFVAL
         data['e2']  = DEFVAL
         data['err'] = PDEFVAL
+        data['T']   = DEFVAL
         data['R']   = DEFVAL
+
+        data['psf_e1'] = DEFVAL
+        data['psf_e2'] = DEFVAL
+        data['psf_T'] = DEFVAL
 
         self.data=data
 
@@ -191,8 +237,10 @@ def get_shear(data, **keys):
     """
     from esutil.stat import wmom
 
+    include_shape_noise_err=keys.get('include_shape_noise_err',True)
+
     wt, ssh = get_weight_and_ssh(data['e1'], data['e2'], data['err'],
-                                 shape_noise_type=shape_noise_type)
+                                 **keys)
 
     e1mean,e1err = wmom(data['e1'], wt, calcerr=True)
     e2mean,e2err = wmom(data['e2'], wt, calcerr=True)
@@ -224,7 +272,7 @@ def get_shear(data, **keys):
          'Rerr':Rerr}
     return out
 
-def get_weight_and_ssh(e1, e2, err, shape_noise_type='exp'):
+def get_weight_and_ssh(e1, e2, err, **keys):
     """
     err is per component, as is the shape noise
     """
@@ -237,6 +285,7 @@ def get_weight_and_ssh(e1, e2, err, shape_noise_type='exp'):
     #   ssh = sum(w*ssh)/sum(w)
     # this shape noise is per component
 
+    shape_noise_type=keys.get('shape_noise_type','exp')
     sn2 = get_shape_noise(shape_noise_type)
 
     # coefficients (eq 5-35 Bern02) 

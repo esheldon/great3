@@ -3,6 +3,7 @@ File locations and reading for great3
 """
 from __future__ import print_function
 import os
+import numpy
 
 def get_nsub(**keys):
     """
@@ -448,5 +449,65 @@ def write_fits_clobber(fname, data):
 
     print("writing:",fname)
     fitsio.write(fname, data, clobber=True)
+
+def get_shear_file(**keys):
+    """
+    Get the shear file
+
+    parameters
+    ----------
+    experiment: string
+        Required keyword.  e.g. control, real
+    obs_type: string
+        Required keyword. e.g. ground, space
+    shear_type: string
+        Required keyword.  e.g. constant
+    run: string
+        Required keyword, the run id
+    cut: string
+        Required keyword representing the cuts
+    """
+    d=get_output_dir(**keys)
+
+    nkeys={}
+    nkeys.update(keys)
+    obj_range=nkeys.get('obj_range',None)
+
+
+    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s.dat'
+
+    fname = fname % nkeys
+
+    return os.path.join(d, fname)
+
+def read_shear(**keys):
+    """
+    Same parameters as for get_shear_file
+    """
+
+    fname=get_shear_file(**keys)
+    print('reading:',fname)
+
+    dlist=[]
+    with open(fname) as fobj:
+        for line in fobj:
+            if line[0]=='#':
+                continue
+            vals=line.split()
+            subid=int(vals[0])
+            shear1=float(vals[1])
+            shear2=float(vals[2])
+
+            dlist.append( (subid, shear1, shear2) )
+
+    n=len(dlist)
+    out=numpy.zeros(n, dtype=[('subid','i4'),
+                              ('shear','f8',2)])
+    for i in xrange(n):
+        d=dlist[i]
+        out['subid'][i] = d[0]
+        out['shear'][i,0] = d[1]
+        out['shear'][i,1] = d[2]
+    return out
 
 
