@@ -141,14 +141,22 @@ class RGFitter(FitterBase):
 
         self.data=data
 
-_SN2={'exp':None}
-def get_sn2():
+_SN2={'exp':None,'dev':None}
+def get_shape_noise(type):
     """
     get the shape noise per component
     """
-    if _SN2['exp'] is None:
+    if _SN2['type'] is None:
+
         import ngmix
-        g_prior=ngmix.priors.make_gprior_cosmos_exp()
+        
+        if type=='exp':
+            g_prior=ngmix.priors.make_gprior_cosmos_exp()
+        elif type=='dev':
+            g_prior=ngmix.priors.make_gprior_cosmos_dev()
+        else:
+            raise ValueError("bad shape noise type: '%s'" % type)
+
         n=10000
         g1,g2 = g_prior.sample2d(n)
         e1=g1.copy()
@@ -159,7 +167,7 @@ def get_sn2():
 
         print('SN2:',_SN2['exp'])
 
-    return _SN2['exp']
+    return _SN2['type']
 
 def select(data,
            max_ellip=RG_MAX_ELLIP,
@@ -172,21 +180,31 @@ def select(data,
                    & (data['R'] < max_R) )
     return w
 
-def get_shear(data, shape_noise=True):
+def get_shear(data,
+              include_shape_noise_err=True,
+              shape_noise_type='exp'):
     """
-    If shape_noise==False then it is assumed there is
-    no shape noise (e.g. a ring) so only the errors are used
+    parameters
+    ----------
+    data:
+        Outputs from running regauss.
+    include_shape_noise_err: bool, optional
+        If True, just use the weighted variance of shapes, otherwise
+        use the errors only.
+    shape_noise_type: string, optional
+        What type of fits from cosmos to use for shape noise. 
     """
     from esutil.stat import wmom
 
-    wt, ssh = get_weight_and_ssh(data['e1'], data['e2'], data['err'])
+    wt, ssh = get_weight_and_ssh(data['e1'], data['e2'], data['err'],
+                                 shape_noise_type=shape_noise_type)
 
     e1mean,e1err = wmom(data['e1'], wt, calcerr=True)
     e2mean,e2err = wmom(data['e2'], wt, calcerr=True)
     R,Rerr = wmom(data['R'], wt, calcerr=True)
     ssh,ssherr = wmom(ssh, wt, calcerr=True)
 
-    if not shape_noise:
+    if not include_shape_noise_err:
         err2=err**2
         e1ivar = ( 1.0/err2 ).sum()
         e1err = numpy.sqrt( 1.0/e1ivar )
@@ -207,7 +225,7 @@ def get_shear(data, shape_noise=True):
          'Rerr':Rerr}
     return out
 
-def get_weight_and_ssh(e1, e2, err):
+def get_weight_and_ssh(e1, e2, err, shape_noise_type='exp'):
     """
     err is per component, as is the shape noise
     """
@@ -220,7 +238,7 @@ def get_weight_and_ssh(e1, e2, err):
     #   ssh = sum(w*ssh)/sum(w)
     # this shape noise is per component
 
-    sn2 = get_sn2() 
+    sn2 = get_shape_noise(shape_noise_type)
 
     # coefficients (eq 5-35 Bern02) 
 

@@ -372,12 +372,19 @@ def get_output_file(**keys):
     """
     d=get_output_dir(**keys)
 
-    if 'obj_range' in keys:
+    nkeys={}
+    nkeys.update(keys)
+    obj_range=nkeys.get('obj_range',None)
+
+
+    if obj_range is not None:
+        nkeys['start'] = obj_range[0]
+        nkeys['end'] = obj_range[1]
         fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s-%(start)05d-%(end)05d.fits'
     else:
         fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s.fits'
 
-    fname = fname % keys
+    fname = fname % nkeys
 
     return os.path.join(d, fname)
 
@@ -388,5 +395,18 @@ def get_condor_dir(**keys):
     rd=get_run_dir(**keys)
 
     return os.path.join(rd, 'condor')
+
+def write_fits_clobber(fname, data):
+    """
+    Write the data to the file, checking for directory
+    existence and over-writing
+    """
+    import fitsio
+    d=os.path.dirname(fname)
+    if not os.path.exists(d):
+        os.makedirs(d)
+
+    print("writing:",fname)
+    fitsio.write(fname, data, clobber=True)
 
 
