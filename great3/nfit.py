@@ -20,34 +20,34 @@ class NGMixFitter(FitterBase):
         """
         run B&A fitting
         """
-        index = self.index_list[sub_index]
+        self.res={'flags':0}
 
-        gal_image,gal_cen = self.field.get_gal_image(index)
-        weight_image = 0*gal_image + self.sky_ivar
+        self.index = self.index_list[sub_index]
+        self._set_image_data()
+
+        self._fit_psf()
+        if self.res['flags'] != 0:
+            return res
+
+        self._fit_galaxy()
+
+        self._copy_to_output(sub_index, self.res)
+
+    def _set_image_data(self):
+        """
+        Get all the data we need to do our processing
+        """
+        self.gal_image,self.gal_cen_guess = \
+                self.field.get_gal_image(self.index)
+
+        self.weight_image = 0*self.gal_image + self.sky_ivar
 
         rint=numpy.random.randint(9)
-        psf_image,psf_cen = self.field.get_star_image(rint)
+        self.psf_image,self.psf_cen_guess = \
+                self.field.get_star_image(rint)
 
-        try:
-            psf_fitter = self._fit_psf(psf_image, psf_cen)
-        except PSFFailure:
-            print("psf failure at object",index)
-            self.data['flags'][sub_index] = PSF_FIT_FAILURE
-            return
 
-        psf_gmix=psf_fitter.get_gmix()
-        #self._copy_psf_info(sub_index, psf_gmix)
-
-        gal_res = self._fit_galaxy(gal_image,
-                                   gal_cen,
-                                   weight_image,
-                                   psf_gmix)
-
-        #self._copy_gal_info(sub_index, gal_res)
-
-        return gal_res
-
-    def _fit_psf(self, psf_image, psf_cen): 
+    def _fit_psf(self): 
         """
         Fit the psf image
         """
@@ -57,41 +57,49 @@ class NGMixFitter(FitterBase):
 
         model=conf['psf_model']
         if 'em' in model:
-            ntry=conf['psf_ntry']
             ngauss=_em_ngauss_map[model]
             if ngauss==1:
-                fitter=self._fit_em_1gauss(psf_image, psf_cen, sigma_guess,ntry)
+                fitter=self._fit_em_1gauss(self.psf_image,
+                                           self.psf_cen_guess,
+                                           sigma_guess)
             else:
-                fitter=self._fit_em_2gauss(psf_image, psf_cen, sigma_guess,ntry)
+                fitter=self._fit_em_2gauss(self.psf_image,
+                                           self.psf_cen_guess,
+                                           sigma_guess)
 
         else:
             raise ValueError("unsupported psf model: '%s'" % model)
 
-        if self.make_plots and fitter is not None:
-            self._compare_psf(psf_image, fitter)
+        if fitter is None:
+            self.res['flags'] = PSF_FIT_FAILURE
+            print("psf failure at object",index)
+        else:
+            self.res['psf_gmix'] = fitter.get_gmix()
 
-        return fitter
+            if self.make_plots:
+                self._compare_psf(fitter)
 
-    def _fit_em_1gauss(self, im, cen, sigma_guess,ntry):
+
+    def _fit_em_1gauss(self, im, cen, sigma_guess):
         """
         Just run the fitter
         """
-        return self._fit_with_em(im, cen, sigma_guess, 1, ntry)
+        return self._fit_with_em(im, cen, sigma_guess, 1)
 
-    def _fit_em_2gauss(self, im, cen, sigma_guess, ntry):
+    def _fit_em_2gauss(self, im, cen, sigma_guess):
         """
         First fit 1 gauss and use it for guess
         """
-        fitter1=self._fit_with_em(im, cen, sigma_guess, 1, ntry)
+        fitter1=self._fit_with_em(im, cen, sigma_guess, 1)
 
         gmix=fitter1.get_gmix()
         sigma_guess_new = sqrt( gmix.get_T()/2. )
 
-        fitter2=self._fit_with_em(im, cen, sigma_guess_new, 2, ntry)
+        fitter2=self._fit_with_em(im, cen, sigma_guess_new, 2)
 
         return fitter2
 
-    def _fit_with_em(self, im, cen, sigma_guess, ngauss, ntry):
+    def _fit_with_em(self, im, cen, sigma_guess, ngauss):
         """
         Fit the image using EM
         """
@@ -106,6 +114,7 @@ class NGMixFitter(FitterBase):
         im_with_sky, sky = ngmix.em.prep_image(im)
         jacob = self._get_jacobian(cen)
 
+        ntry = conf['em_ntry']
         for i in xrange(ntry):
             guess = self._get_em_guess(sigma_guess, ngauss)
             try:
@@ -126,8 +135,8 @@ class NGMixFitter(FitterBase):
                                    jacob):
         import ngmix
 
-        maxiter=self.conf['psf_maxiter']
-        tol=self.conf['psf_tol']
+        maxiter=self.conf['em_maxiter']
+        tol=self.conf['em_tol']
 
         fitter=ngmix.em.GMixEM(image, jacobian=jacob)
         fitter.go(guess, sky, maxiter=maxiter, tol=tol)
@@ -151,12 +160,12 @@ class NGMixFitter(FitterBase):
         import ngmix
 
         sigma2 = sigma**2
-        pars=numpy.array( [1.0 + 0.01*srandu(),
-                           0.1*srandu(),
-                           0.1*srandu(), 
-                           sigma2*(1.0 + 0.1*srandu()),
-                           0.01*srandu(),
-                           sigma2*(1.0 + 0.1*srandu())] )
+        pars=array( [1.0 + 0.01*srandu(),
+                     0.1*srandu(),
+                     0.1*srandu(), 
+                     sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     sigma2*(1.0 + 0.1*srandu())] )
 
         return ngmix.gmix.GMix(pars=pars)
 
@@ -165,40 +174,89 @@ class NGMixFitter(FitterBase):
 
         sigma2 = sigma**2
 
-        pars=numpy.array( [_em2_pguess[0],
-                           0.1*srandu(),
-                           0.1*srandu(),
-                           _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
-                           0.0,
-                           _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+        pars=array( [_em2_pguess[0],
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                     0.0,
+                     _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
 
-                           _em2_pguess[1],
-                           0.1*srandu(),
-                           0.1*srandu(),
-                           _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
-                           0.0,
-                           _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
+                     _em2_pguess[1],
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                     0.0,
+                     _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
 
 
         return ngmix.gmix.GMix(pars=pars)
 
-    def _compare_psf(self, psf_image, fitter):
+    def _compare_psf(self, fitter):
         """
         compare psf image to best fit model
         """
         import images
+
+        model_image = fitter.make_image(counts=self.psf_image.sum())
+
+        plt=images.compare_images(self.psf_image,
+                                  model_image,
+                                  label1='psf',
+                                  label2=self.conf['psf_model'],
+                                  show=False)
+
+        pname='psf-resid-%06d.png' % self.index
+        plt.write_img(1400,800,pname)
+
+    def _do_gal_plots(self, model, fitter):
+        """
+        Make residual plot and trials plot
+        """
+        self._compare_gal(model, fitter)
+        self._make_trials_plot(model, fitter)
+
+    def _make_trials_plot(self, model, fitter):
+        """
+        Plot the trials
+        """
+        width,height=800,800
+        tup=fitter.make_plots(title=model)
+
+        if isinstance(tup, tuple):
+            p,wp = tup
+            wtrials_pname='wtrials-%06d-%s.png' % (self.index,model)
+            wp.write_img(width,height,wtrials_pname)
+        else:
+            p = tup
+
+        trials_pname='trials-%06d-%s.png' % (self.index,model)
+        p.write_img(width,height,trials_pname)
+
+    def _compare_gal(self, model, fitter):
+        """
+        compare psf image to best fit model
+        """
+        import images
+
         gmix = fitter.get_gmix()
 
-        model = fitter.make_image(counts=psf_image.sum())
+        res=self.res
+        psf_gmix = res['psf_gmix']
+        gmix_conv = gmix.convolve(psf_gmix)
 
-        images.compare_images(psf_image, model,
-                              label1='psf',
-                              label2='model')
-        key=raw_input("hit a key: (q to quit) ")
-        if key=='q':
-            stop
+        model_image = gmix_conv.make_image(self.gal_image.shape,
+                                           jacobian=res['jacob'])
 
-    def _fit_galaxy(self, gal_image, gal_cen, weight_image, psf_gmix):
+        plt=images.compare_images(self.gal_image,
+                                  model_image,
+                                  label1='galaxy',
+                                  label2=model,
+                                  show=False)
+        pname='gal-resid-%06d-%s.png' % (self.index,model)
+        plt.write_img(1400,800,pname)
+
+
+    def _fit_galaxy(self):
         """
         Fit the galaxy to the models
 
@@ -211,34 +269,10 @@ class NGMixFitter(FitterBase):
 
         print('    fitting gal em 1gauss')
 
-        em_res = self._fit_galaxy_em(gal_image,
-                                     gal_cen,
-                                     weight_image,
-                                     psf_gmix)
+        self._fit_galaxy_em()
+        self._fit_simple_models()
 
-        pprint(em_res)
-
-        return em_res
-        #self._fit_simple_models(em_res, gal_image, weight_image, psf_gmix)
-
-    def _fit_simple_models(self, dindex, sdata):
-        """
-        Fit all the simple models
-        """
-
-        for model in self.simple_models:
-            print('    fitting:',model)
-
-            gm=self._fit_simple(dindex, model, sdata)
-
-            res=gm.get_result()
-
-            self._copy_simple_pars(dindex, res)
-            self._print_simple_res(res)
-
-
-
-    def _fit_galaxy_em(self, image, cen_guess, weight_image, psf_gmix):
+    def _fit_galaxy_em(self):
         """
 
         Fit a single gaussian with em to find a decent center.  We don't get a
@@ -247,14 +281,15 @@ class NGMixFitter(FitterBase):
         """
 
         # first the structural fit
-        sigma_guess = sqrt( psf_gmix.get_T()/2.0 )
-        ntry=self.conf['gal_em_ntry']
-        fitter=self._fit_em_1gauss(image, cen_guess, sigma_guess, ntry)
+        sigma_guess = sqrt( self.res['psf_gmix'].get_T()/2.0 )
+        fitter=self._fit_em_1gauss(self.gal_image,
+                                   self.gal_cen_guess,
+                                   sigma_guess)
 
         em_gmix = fitter.get_gmix()
 
         row_rel, col_rel = em_gmix.get_cen()
-        em_cen = cen_guess + numpy.array([row_rel,col_rel])
+        em_cen = self.gal_cen_guess + array([row_rel,col_rel])
 
         print("    em gauss cen:",em_cen)
 
@@ -262,22 +297,21 @@ class NGMixFitter(FitterBase):
 
         # now get a flux
         print('    fitting robust gauss flux')
-        flux, flux_err = self._fit_flux(image,
-                                        weight_image,
+        flux, flux_err = self._fit_flux(self.gal_image,
+                                        self.weight_image,
                                         jacob,
                                         em_gmix)
 
-        res={'flags':0}
-        res['em_gauss_flux'] = flux
-        res['em_gauss_flux_err'] = flux_err
-        res['em_gauss_cen'] = jacob.get_cen()
-        res['jacob'] = jacob
-
-        return res
+        self.res['em_gauss_flux'] = flux
+        self.res['em_gauss_flux_err'] = flux_err
+        self.res['em_gauss_cen'] = jacob.get_cen()
+        self.res['em_gmix'] = em_gmix
+        self.res['jacob'] = jacob
 
     def _fit_flux(self, image, weight_image, jacob, gmix):
         """
-        Fit the PSF flux
+        Fit the flux from a fixed gmix model.  This is linear and always
+        succeeds.
         """
         import ngmix
 
@@ -294,6 +328,152 @@ class NGMixFitter(FitterBase):
         print(mess)
 
         return flux, flux_err
+
+
+    def _fit_simple_models(self):
+        """
+        Fit all the simple models
+        """
+
+        for model in self.simple_models:
+            print('    fitting:',model)
+            self._fit_simple(model)
+            self._print_simple_res(self.res[model]['res'])
+
+            if self.make_plots:
+                self._do_gal_plots(model, self.res[model]['gm'])
+
+    def _fit_simple(self, model):
+        """
+        Fit the simple model, taking guesses from our
+        previous em fits
+        """
+        import ngmix
+
+        priors=self.priors[model]
+        g_prior=priors['g']
+        T_prior=priors['T']
+        counts_prior=priors['counts']
+        cen_prior=self.cen_prior
+
+        res=self.res
+        conf=self.conf
+
+        full_guess=self._get_guess_simple()
+
+        gm=ngmix.fitting.MCMCSimple(self.gal_image,
+                                    self.weight_image,
+                                    res['jacob'],
+                                    model,
+                                    psf=res['psf_gmix'],
+
+                                    nwalkers=conf['nwalkers'],
+                                    burnin=conf['burnin'],
+                                    nstep=conf['nstep'],
+                                    mca_a=conf['mca_a'],
+
+                                    full_guess=full_guess,
+
+                                    cen_prior=cen_prior,
+                                    T_prior=T_prior,
+                                    counts_prior=counts_prior,
+                                    g_prior=g_prior,
+                                    do_pqr=conf['do_pqr'])
+        gm.go()
+
+        self.res[model] = {'gm':gm,'res':gm.get_result()}
+
+    def _get_guess_simple(self,
+                          widths=[0.01, 0.01, 0.01, 0.01, 0.01, 0.01]):
+        """
+        Get a guess centered on the truth
+
+        width is relative for T and counts
+        """
+
+        
+
+        nwalkers = self.conf['nwalkers']
+
+        res=self.res
+        gmix = res['em_gmix']
+        g1,g2,T = gmix.get_g1g2T()
+        flux = res['em_gauss_flux']
+
+        guess=numpy.zeros( (nwalkers, 6) )
+
+        # centers relative to jacobian center
+        guess[:,0] = widths[0]*srandu(nwalkers)
+        guess[:,1] = widths[1]*srandu(nwalkers)
+
+        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2:2+2])
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        guess[:,4] = get_positive_guess(T,nwalkers,width=widths[4])
+        guess[:,5] = get_positive_guess(flux,nwalkers,width=widths[5])
+
+        return guess
+
+    def _print_simple_res(self, res):
+        self._print_simple_cen(res)
+        self._print_simple_shape(res)
+        self._print_simple_T(res)
+        self._print_simple_fluxes(res)
+        print('        arate:',res['arate'])
+
+    def _print_simple_cen(self, res):
+        """
+        print the center
+        """
+        pars=res['pars']
+        perr=res['pars_err']
+        mess='        cen: %.4g +/- %.4g %.4g +/- %.4g'
+        mess = mess % (pars[0],perr[0],pars[1],perr[1])
+        print(mess)
+
+    def _print_simple_shape(self, res):
+        """
+        print shape info
+        """
+        g1=res['pars'][2]
+        g1err=sqrt(res['pars_cov'][2,2])
+        g2=res['pars'][3]
+        g2err=sqrt(res['pars_cov'][3,3])
+
+        mess='        g1: %.4g +/- %.4g g2: %.4g +/- %.4g'
+        mess = mess % (g1,g1err,g2,g2err)
+        print(mess)
+
+    def _print_simple_fluxes(self, res):
+        """
+        print in a nice format
+        """
+        flux=res['pars'][5]
+        flux_err=sqrt( res['pars_cov'][5, 5] )
+        s2n=flux/flux_err
+
+        print('        flux: %s +/- %s Fs2n: %s' % (flux,flux_err,s2n))
+
+    def _print_simple_T(self, res):
+        """
+        print T, Terr, Ts2n and sigma
+        """
+        T = res['pars'][4]
+        Terr = sqrt( res['pars_cov'][4,4] )
+
+        if Terr > 0:
+            Ts2n=T/Terr
+        else:
+            Ts2n=-9999.0
+        if T > 0:
+            sigma=sqrt(T/2.)
+        else:
+            sigma=-9999.0
+
+        tup=(T,Terr,Ts2n,sigma)
+        print('        T: %s +/- %s Ts2n: %s sigma: %s' % tup)
+
 
     def _finish_setup(self):
         """
@@ -344,7 +524,7 @@ class NGMixFitter(FitterBase):
             T_prior=T_priors[i]
 
             # note it is a list
-            counts_prior=[ counts_priors[i] ]
+            counts_prior=counts_priors[i]
 
             g_prior=g_priors[i]
             
@@ -353,6 +533,71 @@ class NGMixFitter(FitterBase):
 
         self.priors=priors
         self.draw_g_prior=conf.get('draw_g_prior',True)
+
+    def _print_res(self, res):
+        pass
+
+    def _copy_to_output(self, sub_index, res):
+        """
+        Copy the galaxy fits
+        """
+
+        data=self.data
+        conf=self.conf
+
+        data['flags'][sub_index] = res['flags']
+
+        if 'psf_gmix' in res:
+            self._copy_psf_to_output(res['psf_gmix'])
+
+            data['em_gauss_flux'][sub_index] = res['em_gauss_flux']
+            data['em_gauss_flux_err'][sub_index] = res['em_gauss_flux_err']
+            data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
+
+            if 'simple' in conf['fit_types']:
+                for model in conf['simple_models']:
+                    self._copy_simple_pars(sub_index, model, res)
+
+    def _copy_simple_pars(self, sub_index, model, allres):
+        """
+        Copy from the result dict to the output array
+        """
+
+        conf=self.conf
+        res = allres[model]['res']
+
+        n=get_model_names(model)
+
+        pars=res['pars']
+        pars_cov=res['pars_cov']
+
+        flux=pars[5:]
+        flux_cov=pars_cov[5:, 5:]
+
+        self.data[n['pars']][sub_index,:] = pars
+        self.data[n['pars_cov']][sub_index,:,:] = pars_cov
+
+        self.data[n['flux']][sub_index] = flux
+        self.data[n['flux_cov']][sub_index] = flux_cov
+
+        self.data[n['g']][sub_index,:] = res['g']
+        self.data[n['g_cov']][sub_index,:,:] = res['g_cov']
+
+        self.data[n['arate']][sub_index] = res['arate']
+
+        for sn in _stat_names:
+            self.data[n[sn]][sub_index] = res[sn]
+
+        if conf['do_pqr']:
+            self.data[n['P']][sub_index] = res['P']
+            self.data[n['Q']][sub_index,:] = res['Q']
+            self.data[n['R']][sub_index,:,:] = res['R']
+ 
+    def _copy_psf_to_output(self, psf_gmix):
+        """
+        copy some psf info
+        """
+        pass
 
     def _make_struct(self):
         """
@@ -386,7 +631,7 @@ class NGMixFitter(FitterBase):
                      (n['g'],'f8',2),
                      (n['g_cov'],'f8',(2,2)),
                     
-                     (n['s2n'],'f8'),
+                     (n['s2n_w'],'f8'),
                      (n['chi2per'],'f8'),
                      (n['dof'],'f8'),
                      (n['aic'],'f8'),
@@ -394,9 +639,10 @@ class NGMixFitter(FitterBase):
                      (n['arate'],'f8'),
                     ]
 
-                dt += [(n['P'], 'f8'),
-                       (n['Q'], 'f8', 2),
-                       (n['R'], 'f8', (2,2))]
+                if conf['do_pqr']:
+                    dt += [(n['P'], 'f8'),
+                           (n['Q'], 'f8', 2),
+                           (n['R'], 'f8', (2,2))]
 
 
         num=self.index_list.size
@@ -419,14 +665,15 @@ class NGMixFitter(FitterBase):
                 data[n['g']] = DEFVAL
                 data[n['g_cov']] = PDEFVAL
 
-                data[n['s2n']] = DEFVAL
+                data[n['s2n_w']] = DEFVAL
                 data[n['chi2per']] = PDEFVAL
                 data[n['aic']] = BIG_PDEFVAL
                 data[n['bic']] = BIG_PDEFVAL
 
-                data[n['P']] = DEFVAL
-                data[n['Q']] = DEFVAL
-                data[n['R']] = DEFVAL
+                if conf['do_pqr']:
+                    data[n['P']] = DEFVAL
+                    data[n['Q']] = DEFVAL
+                    data[n['R']] = DEFVAL
 
      
         self.data=data
@@ -482,7 +729,7 @@ def get_g_priors(conf):
     for i,typ in enumerate(g_prior_types):
         if typ =='exp':
             pars=conf['g_prior_pars'][i]
-            parr=numpy.array(pars,dtype='f8')
+            parr=array(pars,dtype='f8')
             g_prior = ngmix.priors.GPriorM(parr)
         elif typ=='cosmos-galfit':
             g_prior = ngmix.priors.make_gprior_cosmos_galfit()
@@ -510,14 +757,14 @@ def get_cen_prior(conf):
     else:
         return None
 
-_em2_fguess=numpy.array([0.5793612389470884,1.621860687127999])
-_em2_pguess=numpy.array([0.596510042804182,0.4034898268889178])
-#_em2_fguess=numpy.array([12.6,3.8])
+_em2_fguess=array([0.5793612389470884,1.621860687127999])
+_em2_pguess=array([0.596510042804182,0.4034898268889178])
+#_em2_fguess=array([12.6,3.8])
 #_em2_fguess[:] /= _em2_fguess.sum()
-#_em2_pguess=numpy.array([0.30, 0.70])
+#_em2_pguess=array([0.30, 0.70])
 _em_ngauss_map = {'em1':1, 'em2':2}
 
-_stat_names=['s2n',
+_stat_names=['s2n_w',
              'chi2per',
              'dof',
              'aic',
@@ -547,4 +794,51 @@ def get_model_names(model):
         ndict[n] = '%s_%s' % (model,n)
 
     return ndict
+
+def get_shape_guess(g1, g2, n, width=[0.01,0.01]):
+    """
+    Get guess, making sure in range
+    """
+    import ngmix
+    from ngmix.gexceptions import GMixRangeError
+
+    guess=numpy.zeros( (n, 2) )
+    shape=ngmix.Shape(g1, g2)
+
+    for i in xrange(n):
+
+        while True:
+            try:
+                g1_offset = width[0]*srandu()
+                g2_offset = width[1]*srandu()
+                shape_new=shape.copy()
+                shape_new.shear(g1_offset, g2_offset)
+                break
+            except GMixRangeError:
+                pass
+
+        guess[i,0] = shape_new.g1
+        guess[i,1] = shape_new.g2
+
+    return guess
+
+def get_positive_guess(val, n, width=0.01):
+    """
+    Get guess, making sure positive
+    """
+    from ngmix.gexceptions import GMixRangeError
+
+    if val <= 0.0:
+        raise GMixRangeError("val <= 0: %s" % val)
+
+    vals=numpy.zeros(n)-9999.0
+    while True:
+        w,=numpy.where(vals <= 0)
+        if w.size == 0:
+            break
+        else:
+            vals[w] = val*(1.0 + width*srandu(w.size))
+
+    return vals
+
 

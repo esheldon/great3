@@ -125,7 +125,7 @@ class RGFitter(FitterBase):
 
         return cen_guess, psf_cen_guess, psf_irr_guess, gal_irr_guess
 
-    def print_res(self,res):
+    def _print_res(self,res):
         """
         Print some stats from the fit
         """
