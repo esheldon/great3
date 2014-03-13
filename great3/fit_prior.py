@@ -5,7 +5,6 @@ Fit joint flux-size distribution
 import os
 import numpy
 
-from . import analysis
 from . import files
 
 NGAUSS_DEFAULT=8
@@ -36,7 +35,7 @@ _par_labels[4] = [r'$\eta_1$',
                   r'$\eta_2$',
                   r'$log_{10}(T)$',
                   r'$log_{10}(F)$']
-_par_labels[4] = [r'$\eta_1$',
+_par_labels[5] = [r'$\eta_1$',
                   r'$\eta_2$',
                   r'$log_{10}(T)$',
                   r'$log_{10}(F_b)$',
@@ -45,6 +44,8 @@ _par_labels[4] = [r'$\eta_1$',
 def fit_joint(pars,
               ngauss=NGAUSS_DEFAULT,
               n_iter=N_ITER_DEFAULT,
+              min_covar=MIN_COVAR,
+              show=False,
               eps=None):
     """
     pars should be [nobj, ndim]
@@ -73,7 +74,7 @@ def fit_joint(pars,
 
     logpars[:,3:] = numpy.log10( pars[:,3:] )
 
-    gmm=fit_gmix(logpars,ngauss,n_iter)
+    gmm=fit_gmix(logpars,ngauss,n_iter, min_covar=min_covar)
 
     output=numpy.zeros(ngauss, dtype=[('means','f8',ndim),
                                       ('covars','f8',(ndim,ndim)),
@@ -82,7 +83,7 @@ def fit_joint(pars,
     output['covars']=gmm.covars_
     output['weights']=gmm.weights_
 
-    plot_fits(logpars, gmm, eps=eps, par_labels=par_labels)
+    plot_fits(logpars, gmm, eps=eps, par_labels=par_labels, show=show)
 
     """
     extra='ngauss%d' % ngauss
@@ -108,10 +109,8 @@ def fit_joint(pars,
                      extra=extra)
 
     """
-    return output, h
 
-
-def fit_gmix(data, ngauss, n_iter):
+def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     """
     For g1,g2,T,flux send logarithic versions:
         eta1, eta2, log10(T), log10(flux)
@@ -133,34 +132,25 @@ def fit_gmix(data, ngauss, n_iter):
 
     return gmm
 
-_good_ranges={}
-_good_ranges['exp'] = {'flux':[0.0, 100.0]}
-_good_ranges['dev'] = {'flux':[0.0, 100.0]}
- 
-def select_by_flux(data, model):
-    """
-    Very loose cuts
-    """
-
-    flux, flux_err, T, T_err = analysis.get_flux_T(data, model)
-
-    rng = _good_ranges[model]['flux']
-    w,=numpy.where( (flux > rng[0]) & (flux < rng[1]) )
-    return w
-
 
 def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
     """
     """
     import esutil as eu
     import biggles
+    import images
+
+    biggles.configure('screen','width', 1400)
+    biggles.configure('screen','height', 800)
 
     num=pars.shape[0]
     ndim=pars.shape[1]
 
     samples=gmm.sample(num*100)
 
-    tab=biggles.Table(1, ndim)
+    nrow,ncol = images.get_grid(ndim) 
+
+    tab=biggles.Table(nrow,ncol)
 
     for dim in xrange(ndim):
         plt = _plot_single(pars[:,dim], samples[:,dim])
@@ -169,9 +159,12 @@ def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
         else:
             plt.xlabel=r'$P_%s$' % dim
 
-        tab[0,dim] = plt
+        row=dim/ncol
+        col=dim % ncol
 
-    tab.aspect_ratio=0.5
+        tab[row,col] = plt
+
+    tab.aspect_ratio=ncol/float(nrow)
 
     if show:
         tab.show()

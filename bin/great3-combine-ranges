@@ -38,11 +38,20 @@ def main():
 
     print("will write to:",subid_outfile)
 
-    with fitsio.FITS(subid_outfile,'rw',clobber=True):
+    first=True
+    with fitsio.FITS(subid_outfile,'rw',clobber=True) as fobj:
 
         for low,high in zip(lowvals,highvals):
             conf['obj_range'] = [low, high]
             data=files.read_output(**conf)
+
+            if first:
+                fobj.write(data)
+                first=False
+            else:
+                fobj[-1].append(data)
+
+
     print("output is in:",subid_outfile)
 
 main()
