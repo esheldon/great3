@@ -37,12 +37,12 @@ def main():
     subid_outfile = files.get_output_file(**conf)
 
     print("will write to:",subid_outfile)
-    stop
 
-    with fitsio.FITS(subid_outfile,'rw',clobber=True)
+    with fitsio.FITS(subid_outfile,'rw',clobber=True):
 
         for low,high in zip(lowvals,highvals):
             conf['obj_range'] = [low, high]
             data=files.read_output(**conf)
+    print("output is in:",subid_outfile)
 
 main()
