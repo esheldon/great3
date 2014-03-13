@@ -270,7 +270,7 @@ class NGMixFitter(FitterBase):
         print('    fitting gal em 1gauss')
 
         self._fit_galaxy_em()
-        self._fit_simple_models()
+        self._fit_galaxy_models()
 
     def _fit_galaxy_em(self):
         """
@@ -330,18 +330,24 @@ class NGMixFitter(FitterBase):
         return flux, flux_err
 
 
-    def _fit_simple_models(self):
+    def _fit_galaxy_models(self):
         """
-        Fit all the simple models
+        Run through and fit all the models
         """
 
-        for model in self.simple_models:
+        for model in self.fit_models:
             print('    fitting:',model)
-            self._fit_simple(model)
-            self._print_simple_res(self.res[model]['res'])
+
+            if model=='bdf':
+                self._fit_bdf()
+            else:
+                self._fit_simple(model)
+
+            self._print_galaxy_res(model)
 
             if self.make_plots:
-                self._do_gal_plots(model, self.res[model]['gm'])
+                self._do_gal_plots(model, self.res[model]['fitter'])
+
 
     def _fit_simple(self, model):
         """
@@ -361,27 +367,30 @@ class NGMixFitter(FitterBase):
 
         full_guess=self._get_guess_simple()
 
-        gm=ngmix.fitting.MCMCSimple(self.gal_image,
-                                    self.weight_image,
-                                    res['jacob'],
-                                    model,
-                                    psf=res['psf_gmix'],
+        fitter=ngmix.fitting.MCMCSimple(self.gal_image,
+                                        self.weight_image,
+                                        res['jacob'],
+                                        model,
+                                        psf=res['psf_gmix'],
 
-                                    nwalkers=conf['nwalkers'],
-                                    burnin=conf['burnin'],
-                                    nstep=conf['nstep'],
-                                    mca_a=conf['mca_a'],
+                                        nwalkers=conf['nwalkers'],
+                                        burnin=conf['burnin'],
+                                        nstep=conf['nstep'],
+                                        mca_a=conf['mca_a'],
 
-                                    full_guess=full_guess,
+                                        full_guess=full_guess,
 
-                                    cen_prior=cen_prior,
-                                    T_prior=T_prior,
-                                    counts_prior=counts_prior,
-                                    g_prior=g_prior,
-                                    do_pqr=conf['do_pqr'])
-        gm.go()
+                                        cen_prior=cen_prior,
+                                        T_prior=T_prior,
+                                        counts_prior=counts_prior,
+                                        g_prior=g_prior,
+                                        do_pqr=conf['do_pqr'])
+        fitter.go()
 
-        self.res[model] = {'gm':gm,'res':gm.get_result()}
+        self.res[model] = {'fitter':fitter,
+                           'res':fitter.get_result()}
+
+
 
     def _get_guess_simple(self,
                           widths=[0.01, 0.01, 0.01, 0.01, 0.01, 0.01]):
@@ -415,14 +424,115 @@ class NGMixFitter(FitterBase):
 
         return guess
 
-    def _print_simple_res(self, res):
-        self._print_simple_cen(res)
-        self._print_simple_shape(res)
-        self._print_simple_T(res)
-        self._print_simple_fluxes(res)
+    def _fit_bdf(self):
+        """
+        Fit the simple model, taking guesses from our
+        previous em fits
+        """
+        import ngmix
+
+        priors=self.priors['bdf']
+        g_prior=priors['g']
+        T_prior=priors['T']
+        counts_prior=priors['counts']
+        cen_prior=self.cen_prior
+        bfrac_prior=self.bfrac_prior
+
+        res=self.res
+        conf=self.conf
+
+        full_guess=self._get_guess_bdf()
+
+        fitter=ngmix.fitting.MCMCBDF(self.gal_image,
+                                     self.weight_image,
+                                     res['jacob'],
+                                     psf=res['psf_gmix'],
+
+                                     nwalkers=conf['nwalkers'],
+                                     burnin=conf['burnin'],
+                                     nstep=conf['nstep'],
+                                     mca_a=conf['mca_a'],
+
+                                     full_guess=full_guess,
+
+                                     cen_prior=cen_prior,
+                                     T_prior=T_prior,
+                                     counts_prior=counts_prior,
+                                     g_prior=g_prior,
+                                     bfrac_prior=bfrac_prior,
+
+                                     do_pqr=conf['do_pqr'])
+        fitter.go()
+
+        self.res['bdf'] = {'fitter':fitter,
+                           'res':fitter.get_result()}
+
+    def _get_guess_bdf(self,
+                       widths=[0.01, 0.01, 0.01, 0.01, 0.01, 0.01]):
+        """
+        Get a guess centered on the truth
+
+        width is relative for T and counts
+        """
+
+        nwalkers = self.conf['nwalkers']
+
+        res=self.res
+        gmix = res['em_gmix']
+        g1,g2,T = gmix.get_g1g2T()
+        flux = res['em_gauss_flux']
+
+        guess=numpy.zeros( (nwalkers, 7) )
+
+        # centers relative to jacobian center
+        guess[:,0] = widths[0]*srandu(nwalkers)
+        guess[:,1] = widths[1]*srandu(nwalkers)
+
+        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2:2+2])
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        guess[:,4] = get_positive_guess(T,nwalkers,width=widths[4])
+
+        counts_guess = get_positive_guess(flux,nwalkers,width=widths[5])
+
+        bfracs=numpy.zeros(nwalkers)
+        nhalf=nwalkers/2
+        bfracs[0:nhalf] = 0.01*randu(nhalf)
+        bfracs[nhalf:] = 0.99+0.01*randu(nhalf)
+
+        dfracs = 1.0 - bfracs
+
+        # bulge flux
+        guess[:,5] = bfracs*counts_guess
+        # disk flux
+        guess[:,6] = dfracs*counts_guess
+
+        return guess
+
+
+
+    def _print_galaxy_res(self, model):
+        res=self.res[model]['res']
+        self._print_galaxy_cen(res)
+        self._print_galaxy_shape(res)
+        self._print_galaxy_T(res)
+        self._print_galaxy_flux(res)
+
+        if model=='bdf':
+            self._print_bfrac(res)
         print('        arate:',res['arate'])
 
-    def _print_simple_cen(self, res):
+    def _print_bfrac(self, res):
+        pars=res['pars']
+
+        flux=pars[5:].sum()
+        flux_b = pars[5]
+
+        bfrac = flux_b/flux
+        print('        bfrac: %g' % bfrac)
+
+    def _print_galaxy_cen(self, res):
         """
         print the center
         """
@@ -432,7 +542,7 @@ class NGMixFitter(FitterBase):
         mess = mess % (pars[0],perr[0],pars[1],perr[1])
         print(mess)
 
-    def _print_simple_shape(self, res):
+    def _print_galaxy_shape(self, res):
         """
         print shape info
         """
@@ -445,20 +555,22 @@ class NGMixFitter(FitterBase):
         mess = mess % (g1,g1err,g2,g2err)
         print(mess)
 
-    def _print_simple_fluxes(self, res):
+    def _print_galaxy_flux(self, res):
         """
         print in a nice format
         """
-        flux=res['pars'][5]
-        flux_err=sqrt( res['pars_cov'][5, 5] )
+
+        flux = res['pars'][5:].sum()
+        flux_err = sqrt( res['pars_cov'][5:, 5:].sum() )
         s2n=flux/flux_err
 
         print('        flux: %s +/- %s Fs2n: %s' % (flux,flux_err,s2n))
 
-    def _print_simple_T(self, res):
+    def _print_galaxy_T(self, res):
         """
         print T, Terr, Ts2n and sigma
         """
+
         T = res['pars'][4]
         Terr = sqrt( res['pars_cov'][4,4] )
 
@@ -481,8 +593,7 @@ class NGMixFitter(FitterBase):
         """
 
         conf=self.conf
-        self.simple_models=conf['simple_models']
-        self.fit_types = conf['fit_types']
+        self.fit_models=conf['fit_models']
         self.make_plots = conf['make_plots']
 
         self._unpack_priors()
@@ -504,7 +615,7 @@ class NGMixFitter(FitterBase):
     def _unpack_priors(self):
         conf=self.conf
 
-        nmod=len(self.simple_models)
+        nmod=len(self.fit_models)
 
         self.cen_prior=get_cen_prior(conf)
 
@@ -519,7 +630,7 @@ class NGMixFitter(FitterBase):
 
         priors={}
         for i in xrange(nmod):
-            model=self.simple_models[i]
+            model=self.fit_models[i]
 
             T_prior=T_priors[i]
 
@@ -532,7 +643,9 @@ class NGMixFitter(FitterBase):
             priors[model] = modlist
 
         self.priors=priors
-        self.draw_g_prior=conf.get('draw_g_prior',True)
+
+        # bulge+disk fixed size ratio
+        self.bfrac_prior=get_bfrac_prior(conf)
 
     def _print_res(self, res):
         pass
@@ -554,11 +667,10 @@ class NGMixFitter(FitterBase):
             data['em_gauss_flux_err'][sub_index] = res['em_gauss_flux_err']
             data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
 
-            if 'simple' in conf['fit_types']:
-                for model in conf['simple_models']:
-                    self._copy_simple_pars(sub_index, model, res)
+            for model in self.fit_models:
+                self._copy_pars(sub_index, model, res)
 
-    def _copy_simple_pars(self, sub_index, model, allres):
+    def _copy_pars(self, sub_index, model, allres):
         """
         Copy from the result dict to the output array
         """
@@ -571,14 +683,14 @@ class NGMixFitter(FitterBase):
         pars=res['pars']
         pars_cov=res['pars_cov']
 
-        flux=pars[5:]
-        flux_cov=pars_cov[5:, 5:]
+        flux=pars[5:].sum()
+        flux_err=sqrt( pars_cov[5:, 5:].sum() )
 
         self.data[n['pars']][sub_index,:] = pars
         self.data[n['pars_cov']][sub_index,:,:] = pars_cov
 
         self.data[n['flux']][sub_index] = flux
-        self.data[n['flux_cov']][sub_index] = flux_cov
+        self.data[n['flux_err']][sub_index] = flux_err
 
         self.data[n['g']][sub_index,:] = res['g']
         self.data[n['g_cov']][sub_index,:,:] = res['g_cov']
@@ -599,6 +711,15 @@ class NGMixFitter(FitterBase):
         """
         pass
 
+    def _get_model_npars(self, model):
+        """
+        Get the models and number of parameters
+        """
+        if model == 'bdf':
+            return 7
+        else:
+            return 6
+
     def _make_struct(self):
         """
         make the output structure
@@ -612,37 +733,33 @@ class NGMixFitter(FitterBase):
         dt += [(n['flux'],    'f8'),
                (n['flux_err'],'f8'),
                (n['cen'],'f8',2)]
-       
-        if 'simple' in self.fit_types:
-    
-            simple_npars=6
 
-            for model in self.simple_models:
-                n=get_model_names(model)
+        models=self.fit_models
+        for model in models:
+            np = self._get_model_npars(model)
 
-                np=simple_npars
+            n=get_model_names(model)
 
+            dt+=[(n['flags'],'i4'),
+                 (n['pars'],'f8',np),
+                 (n['pars_cov'],'f8',(np,np)),
+                 (n['flux'],'f8'),
+                 (n['flux_err'],'f8'),
+                 (n['g'],'f8',2),
+                 (n['g_cov'],'f8',(2,2)),
+                
+                 (n['s2n_w'],'f8'),
+                 (n['chi2per'],'f8'),
+                 (n['dof'],'f8'),
+                 (n['aic'],'f8'),
+                 (n['bic'],'f8'),
+                 (n['arate'],'f8'),
+                ]
 
-                dt+=[(n['flags'],'i4'),
-                     (n['pars'],'f8',np),
-                     (n['pars_cov'],'f8',(np,np)),
-                     (n['flux'],'f8'),
-                     (n['flux_cov'],'f8'),
-                     (n['g'],'f8',2),
-                     (n['g_cov'],'f8',(2,2)),
-                    
-                     (n['s2n_w'],'f8'),
-                     (n['chi2per'],'f8'),
-                     (n['dof'],'f8'),
-                     (n['aic'],'f8'),
-                     (n['bic'],'f8'),
-                     (n['arate'],'f8'),
-                    ]
-
-                if conf['do_pqr']:
-                    dt += [(n['P'], 'f8'),
-                           (n['Q'], 'f8', 2),
-                           (n['R'], 'f8', (2,2))]
+            if conf['do_pqr']:
+                dt += [(n['P'], 'f8'),
+                       (n['Q'], 'f8', 2),
+                       (n['R'], 'f8', (2,2))]
 
 
         num=self.index_list.size
@@ -652,29 +769,27 @@ class NGMixFitter(FitterBase):
         data['em_gauss_flux_err'] = PDEFVAL
         data['em_gauss_cen'] = DEFVAL
 
-        if 'simple' in self.fit_types:
-            for model in self.simple_models:
-                n=get_model_names(model)
+        for model in self.fit_models:
+            n=get_model_names(model)
 
-                data[n['flags']] = NO_ATTEMPT
+            data[n['flags']] = NO_ATTEMPT
 
-                data[n['pars']] = DEFVAL
-                data[n['pars_cov']] = PDEFVAL
-                data[n['flux']] = DEFVAL
-                data[n['flux_cov']] = PDEFVAL
-                data[n['g']] = DEFVAL
-                data[n['g_cov']] = PDEFVAL
+            data[n['pars']] = DEFVAL
+            data[n['pars_cov']] = PDEFVAL
+            data[n['flux']] = DEFVAL
+            data[n['flux_err']] = PDEFVAL
+            data[n['g']] = DEFVAL
+            data[n['g_cov']] = PDEFVAL
 
-                data[n['s2n_w']] = DEFVAL
-                data[n['chi2per']] = PDEFVAL
-                data[n['aic']] = BIG_PDEFVAL
-                data[n['bic']] = BIG_PDEFVAL
+            data[n['s2n_w']] = DEFVAL
+            data[n['chi2per']] = PDEFVAL
+            data[n['aic']] = BIG_PDEFVAL
+            data[n['bic']] = BIG_PDEFVAL
 
-                if conf['do_pqr']:
-                    data[n['P']] = DEFVAL
-                    data[n['Q']] = DEFVAL
-                    data[n['R']] = DEFVAL
-
+            if conf['do_pqr']:
+                data[n['P']] = DEFVAL
+                data[n['Q']] = DEFVAL
+                data[n['R']] = DEFVAL
      
         self.data=data
 
@@ -757,6 +872,21 @@ def get_cen_prior(conf):
     else:
         return None
 
+def get_bfrac_prior(conf):
+    
+    bptype = conf.get('bfrac_prior_type',None)
+
+    if bptype == 'default':
+        import ngmix
+        # use the miller and im3shape style
+        bfrac_prior=ngmix.priors.BFrac()
+    elif bptype ==None:
+        bfrac_prior=None
+    else:
+        raise ValueError("bad bfrac_prior_type: '%s'" % bptype)
+
+    return bfrac_prior
+
 _em2_fguess=array([0.5793612389470884,1.621860687127999])
 _em2_pguess=array([0.596510042804182,0.4034898268889178])
 #_em2_fguess=array([12.6,3.8])
@@ -778,7 +908,6 @@ def get_model_names(model):
            'cen',
            'flux',
            'flux_err',
-           'flux_cov',
            'g',
            'g_cov',
            'P',
