@@ -26,11 +26,13 @@ class FitterBase(object):
         """
 
         self.conf=keys
+        self._setup_checkpoints()
         self._set_field_data()
         self._set_obj_range()
         self._finish_setup()
-        self._make_struct()
-        self._setup_checkpoints()
+
+        if self._checkpoint_data is None:
+            self._make_struct()
 
     def get_data(self):
         """
@@ -145,6 +147,7 @@ class FitterBase(object):
         self.n_checkpoint    = len(self.checkpoints)
         self.checkpointed    = [0]*self.n_checkpoint
         self.checkpoint_file = self.conf.get('checkpoint_file',None)
+        print("checkpoint file:",self.checkpoint_file)
 
         self._set_checkpoint_data()
 
@@ -159,7 +162,7 @@ class FitterBase(object):
         """
         self._checkpoint_data=self.conf.get('checkpoint_data',None)
         if self._checkpoint_data is not None:
-            self.data=self._checkpoint_data['data']
+            self.data=self._checkpoint_data
 
     def _try_checkpoint(self, tm):
         """
@@ -194,6 +197,20 @@ class FitterBase(object):
                     icheck=i
 
         return should_checkpoint, icheck
+
+    def _write_checkpoint(self, tm):
+        """
+        Write out the current data structure to a temporary
+        checkpoint file.
+        """
+        import fitsio
+
+        print('checkpointing at',tm/60,'minutes')
+        print(self.checkpoint_file)
+
+        with fitsio.FITS(self.checkpoint_file,'rw',clobber=True) as fobj:
+            fobj.write(self.data, extname="model_fits")
+
 
     def _get_default_dtype(self):
         """
