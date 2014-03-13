@@ -54,7 +54,7 @@ Queue
 """
 
 _master_template="""#!/bin/bash
-function runsim {
+function rungreat {
     echo "host: $(hostname)"
 
     great3-run --obj-range ${start},${end} ${config} ${subid}
@@ -86,7 +86,7 @@ cd $tmpdir
 
 tmplog=$(basename $logfile)
 
-runsim &> ${tmplog}
+rungreat &> ${tmplog}
 status=$?
 
 echo "moving log file ${tmplog} -> ${logfile}" >> ${tmplog}
@@ -115,14 +115,14 @@ def write_condor_file(conf, master_script, max_jobs, missing=False):
 
     seconds_per=conf['sec_per']
     nper=conf['nper']
-    time_hours = nper*seconds_per*3600.0
+    time_hours = nper*seconds_per/3600.0
     print('seconds per:',seconds_per)
     print('nper:',nper)
     print('time hours:',time_hours)
 
     if time_hours > MAXTIME_HOURS:
         mess="time %.2f hours is greater than %.2f hours"
-        mess = mess % (MAXTIME_HOURS,time_hours)
+        mess = mess % (time_hours,MAXTIME_HOURS)
         raise ValueError(mess)
 
     low,high = files.get_chunk_ranges(nper)
@@ -188,7 +188,7 @@ def start_new_file(run, filenum, master_script, overall_name, missing=False):
 
     oname='%s-%03d' % (overall_name,filenum)
 
-    print('starting new job file:'0
+    print('starting new job file:')
     print(condor_job_url)
 
     fobj=open(condor_job_url,'w')
@@ -225,13 +225,13 @@ def main():
         parser.print_help()
         sys.exit(45)
 
-    config_file=args[0]
+    config_filename=args[0]
     max_jobs=int(options.max_jobs)
 
-    conf = yaml.load(open(config_file))
+    conf = yaml.load(open(config_filename))
 
     make_some_dirs(conf)
-    master_script=write_master(conf)
+    master_script=write_master(config_filename, conf)
 
     write_condor_file(conf,
                       master_script,

@@ -5,6 +5,8 @@ from __future__ import print_function
 import os
 import numpy
 
+from .constants import *
+
 def get_dir():
     """
     The GREAT3_DATA_DIR environment variable must be set
@@ -442,8 +444,6 @@ def get_condor_file(**keys):
     missing=keys.get('missing',False)
 
     d=get_condor_dir(**keys)
-
-    obj_range=keys['obj_range']
 
     fname='%(run)s' % keys
 
