@@ -49,15 +49,16 @@ kill_sig        = SIGINT
 
 _queue_template="""
 +job_name       = "{job_name}"
-Arguments       = {subid} {start} {end} {logfile}
+Arguments       = {subid} {first} {last} {logfile}
 Queue
 """
 
 _master_template="""#!/bin/bash
+
 function rungreat {
     echo "host: $(hostname)"
 
-    great3-run --obj-range ${start},${end} ${config} ${subid}
+    great3-run --obj-range ${first},${last} ${config} ${subid}
     status=$?
 
     if [[ $status != "0" ]]; then
@@ -69,8 +70,8 @@ function rungreat {
 
 
 subid=$1
-start=$2
-end=$3
+first=$2
+last=$3
 logfile=$4
 
 config="%(config)s"
@@ -144,18 +145,18 @@ def write_condor_file(conf, master_script, max_jobs, missing=False):
 
         for chunk in xrange(nchunks):
             
-            start=low[chunk]
-            end=high[chunk]
+            first=low[chunk]
+            last=high[chunk]
 
             conf['subid'] = subid
-            conf['start'] = start
-            conf['end'] = end
+            conf['first'] = first
+            conf['last'] = last
 
             output = files.get_output_file(**conf)
             logfile = output.replace('.fits','.log')
 
 
-            job_name='%s-%03d-%05d' % (overall_name,start,end)
+            job_name='%s-%03d-%05d' % (overall_name,first,last)
 
             conf['logfile'] = logfile
             conf['job_name'] = job_name
@@ -213,7 +214,12 @@ def write_master(config_filename, conf):
 
 
 def make_some_dirs(conf):
+    output_dir=files.get_output_dir(**conf)
     condor_dir=files.get_condor_dir(**conf)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     if not os.path.exists(condor_dir):
         os.makedirs(condor_dir)
 
