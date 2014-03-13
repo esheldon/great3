@@ -28,6 +28,8 @@ def run(conf):
         fitter=great3.rg.RGFitter(**conf)
     elif 'nfit' in conf['run']:
         fitter=great3.nfit.NGMixFitter(**conf)
+    else:
+        raise ValueError("bad run: '%s'" % conf['run'])
 
     fitter.go()
 
