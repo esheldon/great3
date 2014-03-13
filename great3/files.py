@@ -5,18 +5,6 @@ from __future__ import print_function
 import os
 import numpy
 
-def get_nsub(**keys):
-    """
-    Get the number of sub-field
-    """
-    from . import constants
-
-    deep=keys.get('deep',False)
-    if deep:
-        return constants.NSUB_DEEP
-    else:
-        return constants.NSUB
-
 def get_dir():
     """
     The GREAT3_DATA_DIR environment variable must be set
@@ -437,6 +425,43 @@ def get_condor_dir(**keys):
 
     return os.path.join(rd, 'condor')
 
+
+def get_condor_file(**keys):
+    """
+    Get output file
+
+    parameters
+    ----------
+    run: string
+        Required keyword.  run id
+    filenum: number
+        An ordered number
+    missing: bool
+        for missing outputs
+    """
+    missing=keys.get('missing',False)
+
+    d=get_condor_dir(**keys)
+
+    obj_range=keys['obj_range']
+
+    fname='%(run)s' % keys
+
+    if missing:
+        fname += '-missing'
+
+    fname = fname+'-%(filenum)03d.condor' % keys
+
+    return os.path.join(d, fname)
+
+
+def get_master_script_file(**keys):
+    """
+    the master script run by condor
+    """
+    d=get_condor_dir(**keys)
+    return os.path.join(d, 'master.sh')
+
 def write_fits_clobber(fname, data):
     """
     Write the data to the file, checking for directory
@@ -511,3 +536,43 @@ def read_shear(**keys):
     return out
 
 
+def get_nsub(**keys):
+    """
+    Get the number of sub-field
+    """
+    from . import constants
+
+    deep=keys.get('deep',False)
+    if deep:
+        return constants.NSUB_DEEP
+    else:
+        return constants.NSUB
+
+def get_chunk_ranges(nper):
+    """
+    Get the chunk definitions for gals in a sub-field
+    """
+    
+    nchunks = NGAL_PER_SUBFIELD/nper
+    nleft = NGAL_PER_SUBFIELD % nper
+
+    if nleft != 0:
+        nchunks += 1
+
+    low=[]
+    high=[]
+
+    for i in xrange(nchunks):
+
+        low_i = i*nper
+
+        # minus one becuase it is inclusive
+        if i == (nchunks-1) and nleft != 0:
+            high_i = low_i + nleft -1
+        else:
+            high_i = low_i + nper  - 1
+
+        low.append( low_i )
+        high.append( high_i )
+
+    return low,high

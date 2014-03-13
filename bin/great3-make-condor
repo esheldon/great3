@@ -1,0 +1,241 @@
+#!/usr/bin/env python
+"""
+    %prog config_file
+"""
+from __future__ import print_function
+
+import sys
+import os
+import yaml
+
+import great3
+from great3 import files
+
+from optparse import OptionParser
+parser=OptionParser(__doc__)
+
+parser.add_option('-v','--version',default='work',
+                  help='priority for queue')
+parser.add_option('--missing',action='store_true',
+                  help='write a condor file for the missing files')
+parser.add_option('--max-jobs',default=1000,
+                  help=('max jobs per condor file, as split on run, '
+                        'default %default') )
+
+
+MAXTIME_HOURS=1.5
+
+_condor_template_head="""
+Universe        = vanilla
+
+Notification    = Never 
+
+# Run this exe with these args
+Executable      = {master_script}
+
+
+# Estimate of init. image size.  This is actually high
+# condor always raises it to 60-90 Meg
+Image_Size      = 730000
+
+# we need this or nothing works
+GetEnv = True
+
+kill_sig        = SIGINT
+
++Experiment     = "astro"
+
+"""
+
+_queue_template="""
++job_name       = "{job_name}"
+Arguments       = {subid} {start} {end} {logfile}
+Queue
+"""
+
+_master_template="""#!/bin/bash
+function runsim {
+    echo "host: $(hostname)"
+
+    great3-run --obj-range ${start},${end} ${config} ${subid}
+    status=$?
+
+    if [[ $status != "0" ]]; then
+        echo "error running great3: $status"
+    fi
+
+    return $status
+}
+
+
+subid=$1
+start=$2
+end=$3
+logfile=$4
+
+config="%(config)s"
+
+# temporary log file, to be transferred later
+if [[ -n $_CONDOR_SCRATCH_DIR ]]; then
+    tmpdir=$_CONDOR_SCRATCH_DIR
+else
+    tmpdir=$TMPDIR
+fi
+
+cd $tmpdir
+
+tmplog=$(basename $logfile)
+
+runsim &> ${tmplog}
+status=$?
+
+echo "moving log file ${tmplog} -> ${logfile}" >> ${tmplog}
+
+# errors go to the jobs stderr
+mv -fv "${tmplog}" "${logfile}" 1>&2
+status2=$?
+
+if [[ $status2 != "0" ]]; then
+    # this error message will go to main error file
+    echo "error ${status2} moving log to: ${logfile}" 1>&2
+
+    status=$status2
+fi
+
+exit $status
+"""
+
+def write_condor_file(conf, master_script, max_jobs, missing=False):
+
+    run=conf['run']
+
+    overall_name = run
+    if missing:
+        overall_name += '-missing'
+
+    seconds_per=conf['sec_per']
+    nper=conf['nper']
+    time_hours = nper*seconds_per*3600.0
+    print('seconds per:',seconds_per)
+    print('nper:',nper)
+    print('time hours:',time_hours)
+
+    if time_hours > MAXTIME_HOURS:
+        mess="time %.2f hours is greater than %.2f hours"
+        mess = mess % (MAXTIME_HOURS,time_hours)
+        raise ValueError(mess)
+
+    low,high = files.get_chunk_ranges(nper)
+    nchunks = len(low)
+
+    # number of sub-fields
+    nsub=files.get_nsub(**conf)
+
+    njobs_thisfile=0
+    njobs=0
+
+    old_filenum=-1
+    filenum=0
+
+    fobj=start_new_file(run, filenum, master_script, 
+                        overall_name, missing=missing)
+
+    for subid in xrange(nsub):
+
+        for chunk in xrange(nchunks):
+            
+            start=low[chunk]
+            end=high[chunk]
+
+            conf['subid'] = subid
+            conf['start'] = start
+            conf['end'] = end
+
+            output = files.get_output_file(**conf)
+            logfile = output.replace('.fits','.log')
+
+
+            job_name='%s-%03d-%05d' % (overall_name,start,end)
+
+            conf['logfile'] = logfile
+            conf['job_name'] = job_name
+
+            qdata=_queue_template.format(**conf)
+
+            do_write=True
+            if missing and os.path.exists(output):
+                do_write=False
+
+            if do_write:
+                njobs += 1
+                njobs_thisfile += 1
+                fobj.write(qdata)
+
+            if njobs_thisfile >= max_jobs:
+                filenum += 1
+                njobs_thisfile=0
+                fobj.close()
+                fobj=start_new_file(run, filenum, master_script, 
+                                    overall_name, missing=missing)
+
+
+    print('total jobs: ',njobs)
+
+def start_new_file(run, filenum, master_script, overall_name, missing=False):
+    condor_job_url=files.get_condor_file(run=run,
+                                         filenum=filenum,
+                                         missing=missing)
+
+    oname='%s-%03d' % (overall_name,filenum)
+
+    print('starting new job file:'0
+    print(condor_job_url)
+
+    fobj=open(condor_job_url,'w')
+    text = _condor_template_head.format(master_script=master_script)
+    fobj.write(text)
+
+    return fobj
+
+def write_master(config_filename, conf):
+
+
+    master_script=files.get_master_script_file(**conf)
+
+    conf['config'] = config_filename
+    print(master_script)
+    with open(master_script,'w') as fobj:
+        fobj.write(_master_template % conf)
+    print()
+
+    os.system('chmod 755 %s' % master_script)
+    return master_script
+
+
+def make_some_dirs(conf):
+    condor_dir=files.get_condor_dir(**conf)
+    if not os.path.exists(condor_dir):
+        os.makedirs(condor_dir)
+
+def main():
+
+    options,args = parser.parse_args(sys.argv[1:])
+
+    if len(args) < 1:
+        parser.print_help()
+        sys.exit(45)
+
+    config_file=args[0]
+    max_jobs=int(options.max_jobs)
+
+    conf = yaml.load(open(config_file))
+
+    make_some_dirs(conf)
+    master_script=write_master(conf)
+
+    write_condor_file(conf,
+                      master_script,
+                      max_jobs,
+                      missing=options.missing)
+
+main()

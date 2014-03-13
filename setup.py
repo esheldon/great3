@@ -2,7 +2,8 @@ import os
 import glob
 from distutils.core import setup
 
-scripts=['great3-run','great3-mean-shear','great3-calc-skynoise']
+scripts=['great3-run','great3-mean-shear','great3-calc-skynoise',
+         'great3-make-condor']
 
 scripts=[os.path.join('bin',s) for s in scripts]
 

@@ -1,6 +1,8 @@
 # arcsec/pixel
 PIXEL_SCALE=0.2
 
+NGAL_PER_SUBFIELD=10000
+
 # number of "subfield"s; these are the 10x10 degree images
 NSUB=200
 NSUB_DEEP=5
