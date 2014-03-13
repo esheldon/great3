@@ -151,6 +151,7 @@ def write_condor_file(conf, master_script, max_jobs, missing=False):
             conf['subid'] = subid
             conf['first'] = first
             conf['last'] = last
+            conf['obj_range'] = [first, last]
 
             output = files.get_output_file(**conf)
             logfile = output.replace('.fits','.log')

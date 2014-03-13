@@ -6,6 +6,7 @@ from __future__ import print_function
 
 import sys
 import yaml
+import fitsio
 
 import great3
 from great3 import files
@@ -16,6 +17,29 @@ parser=OptionParser(__doc__)
 parser.add_option('--obj-range',default=None,
                   help="obj range as csv")
 
+def get_checkpoint_data(output_file):
+    """
+    Read in checkpoint data if it exists
+    """
+    checkpoint_file=output_file.replace('.fits','-checkpoint.fits')
+    data=None
+
+    if os.path.exists(checkpoint_file):
+        print('reading checkpoint data:',checkpoint_file)
+        data=fitsio.read(checkpoint_file)
+
+    return checkpoint_file, data
+
+def cleanup_checkpoint(checkpoint_file):
+    """
+    if we get this far, we have succeeded in writing the data. We can remove
+    the checkpoint file
+    """
+    if os.path.exists(checkpoint_file):
+        print('removing checkpoint file',checkpoint_file)
+        os.remove(checkpoint_file)
+
+
 def get_obj_range(options):
     obj_range=options.obj_range
     if obj_range is not None:
@@ -24,6 +48,9 @@ def get_obj_range(options):
     return obj_range
 
 def run(conf):
+
+
+
     if 'rg' in conf['run']:
         fitter=great3.rg.RGFitter(**conf)
     elif 'nfit' in conf['run']:
@@ -53,8 +80,15 @@ def main():
     outfile=files.get_output_file(**conf)
     print("will write to file:",outfile)
 
+    conf['output_file']=outfile
+    conf['checkpoint_file'], conf['checkpoint_data'] = \
+            get_checkpoint_data(conf['output_file'])
+
     data=run(conf)
 
     files.write_fits_clobber(outfile, data)
+
+    cleanup_checkpoint(conf['checkpoint_file'])
+
 
 main()
