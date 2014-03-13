@@ -136,6 +136,8 @@ class FitterBase(object):
             all_skysig = files.read_skynoise(**self.conf)
 
         self.skysig = all_skysig['skysig'][self.conf['subid']]
+        self.sky_ivar = 1.0/self.skysig**2
+
         print("skysig:",self.skysig)
 
     def _setup_checkpoints(self):

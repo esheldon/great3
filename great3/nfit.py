@@ -2,6 +2,7 @@ from __future__ import print_function
 import numpy
 from numpy import sqrt, array, zeros
 from numpy.random import random as randu
+from pprint import pprint
 
 from . import files
 from .generic import *
@@ -22,21 +23,29 @@ class NGMixFitter(FitterBase):
         index = self.index_list[sub_index]
 
         gal_image,gal_cen = self.field.get_gal_image(index)
+        weight_image = 0*gal_image + self.sky_ivar
+
         rint=numpy.random.randint(9)
         psf_image,psf_cen = self.field.get_star_image(rint)
 
         try:
             psf_fitter = self._fit_psf(psf_image, psf_cen)
         except PSFFailure:
-            print("psf failure at",sub_index)
+            print("psf failure at object",index)
             self.data['flags'][sub_index] = PSF_FIT_FAILURE
             return
 
         psf_gmix=psf_fitter.get_gmix()
-        stop
-        self._copy_psf_info(sub_index, psf_gmix)
+        #self._copy_psf_info(sub_index, psf_gmix)
 
-        gal_res = self._fit_galaxy(gal_image, gal_cen, psf_gmix)
+        gal_res = self._fit_galaxy(gal_image,
+                                   gal_cen,
+                                   weight_image,
+                                   psf_gmix)
+
+        #self._copy_gal_info(sub_index, gal_res)
+
+        return gal_res
 
     def _fit_psf(self, psf_image, psf_cen): 
         """
@@ -48,11 +57,12 @@ class NGMixFitter(FitterBase):
 
         model=conf['psf_model']
         if 'em' in model:
+            ntry=conf['psf_ntry']
             ngauss=_em_ngauss_map[model]
             if ngauss==1:
-                fitter=self._fit_em_1gauss(psf_image, psf_cen, sigma_guess)
+                fitter=self._fit_em_1gauss(psf_image, psf_cen, sigma_guess,ntry)
             else:
-                fitter=self._fit_em_2gauss(psf_image, psf_cen, sigma_guess)
+                fitter=self._fit_em_2gauss(psf_image, psf_cen, sigma_guess,ntry)
 
         else:
             raise ValueError("unsupported psf model: '%s'" % model)
@@ -62,26 +72,26 @@ class NGMixFitter(FitterBase):
 
         return fitter
 
-    def _fit_em_1gauss(self, im, cen, sigma_guess):
+    def _fit_em_1gauss(self, im, cen, sigma_guess,ntry):
         """
         Just run the fitter
         """
-        return self._fit_with_em(im, cen, sigma_guess, 1)
+        return self._fit_with_em(im, cen, sigma_guess, 1, ntry)
 
-    def _fit_em_2gauss(self, im, cen, sigma_guess):
+    def _fit_em_2gauss(self, im, cen, sigma_guess, ntry):
         """
         First fit 1 gauss and use it for guess
         """
-        fitter1=self._fit_with_em(im, cen, sigma_guess, 1)
+        fitter1=self._fit_with_em(im, cen, sigma_guess, 1, ntry)
 
         gmix=fitter1.get_gmix()
         sigma_guess_new = sqrt( gmix.get_T()/2. )
 
-        fitter2=self._fit_with_em(im, cen, sigma_guess_new, 2)
+        fitter2=self._fit_with_em(im, cen, sigma_guess_new, 2, ntry)
 
         return fitter2
 
-    def _fit_with_em(self, im, cen, sigma_guess, ngauss):
+    def _fit_with_em(self, im, cen, sigma_guess, ngauss, ntry):
         """
         Fit the image using EM
         """
@@ -95,8 +105,6 @@ class NGMixFitter(FitterBase):
 
         im_with_sky, sky = ngmix.em.prep_image(im)
         jacob = self._get_jacobian(cen)
-
-        ntry=conf['psf_ntry']
 
         for i in xrange(ntry):
             guess = self._get_em_guess(sigma_guess, ngauss)
@@ -190,8 +198,102 @@ class NGMixFitter(FitterBase):
         if key=='q':
             stop
 
-    def _fit_galaxy(self, gal_image, gal_cen, psf_gmix):
-        pass
+    def _fit_galaxy(self, gal_image, gal_cen, weight_image, psf_gmix):
+        """
+        Fit the galaxy to the models
+
+        First fit a single gaussian with em to get a good center. Also fit that
+        model to the image with fixed everything to get a flux, which is linear
+        and always gives some answer.
+
+        Then fit the galaxy models.
+        """
+
+        print('    fitting gal em 1gauss')
+
+        em_res = self._fit_galaxy_em(gal_image,
+                                     gal_cen,
+                                     weight_image,
+                                     psf_gmix)
+
+        pprint(em_res)
+
+        return em_res
+        #self._fit_simple_models(em_res, gal_image, weight_image, psf_gmix)
+
+    def _fit_simple_models(self, dindex, sdata):
+        """
+        Fit all the simple models
+        """
+
+        for model in self.simple_models:
+            print('    fitting:',model)
+
+            gm=self._fit_simple(dindex, model, sdata)
+
+            res=gm.get_result()
+
+            self._copy_simple_pars(dindex, res)
+            self._print_simple_res(res)
+
+
+
+    def _fit_galaxy_em(self, image, cen_guess, weight_image, psf_gmix):
+        """
+
+        Fit a single gaussian with em to find a decent center.  We don't get a
+        flux out of that, but we can get flux using the _fit_flux routine
+
+        """
+
+        # first the structural fit
+        sigma_guess = sqrt( psf_gmix.get_T()/2.0 )
+        ntry=self.conf['gal_em_ntry']
+        fitter=self._fit_em_1gauss(image, cen_guess, sigma_guess, ntry)
+
+        em_gmix = fitter.get_gmix()
+
+        row_rel, col_rel = em_gmix.get_cen()
+        em_cen = cen_guess + numpy.array([row_rel,col_rel])
+
+        print("    em gauss cen:",em_cen)
+
+        jacob=self._get_jacobian(em_cen)
+
+        # now get a flux
+        print('    fitting robust gauss flux')
+        flux, flux_err = self._fit_flux(image,
+                                        weight_image,
+                                        jacob,
+                                        em_gmix)
+
+        res={'flags':0}
+        res['em_gauss_flux'] = flux
+        res['em_gauss_flux_err'] = flux_err
+        res['em_gauss_cen'] = jacob.get_cen()
+        res['jacob'] = jacob
+
+        return res
+
+    def _fit_flux(self, image, weight_image, jacob, gmix):
+        """
+        Fit the PSF flux
+        """
+        import ngmix
+
+        fitter=ngmix.fitting.PSFFluxFitter(image,
+                                           weight_image,
+                                           jacob,
+                                           gmix)
+        fitter.go()
+        res=fitter.get_result()
+
+        flux=res['flux']
+        flux_err=res['flux_err']
+        mess='         %s +/- %s' % (flux,flux_err)
+        print(mess)
+
+        return flux, flux_err
 
     def _finish_setup(self):
         """
@@ -261,12 +363,10 @@ class NGMixFitter(FitterBase):
 
         dt = self._get_default_dtype()
 
-        n=get_model_names('psf')
-        dt += [(n['flags'],   'i4'),
-               (n['flux'],    'f8'),
+        n=get_model_names('em_gauss')
+        dt += [(n['flux'],    'f8'),
                (n['flux_err'],'f8'),
-               (n['chi2per'],'f8'),
-               (n['dof'],'f8')]
+               (n['cen'],'f8',2)]
        
         if 'simple' in self.fit_types:
     
@@ -302,9 +402,9 @@ class NGMixFitter(FitterBase):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        data['psf_flags'] = NO_ATTEMPT
-        data['psf_flux'] = DEFVAL
-        data['psf_flux_err'] = PDEFVAL
+        data['em_gauss_flux'] = DEFVAL
+        data['em_gauss_flux_err'] = PDEFVAL
+        data['em_gauss_cen'] = DEFVAL
 
         if 'simple' in self.fit_types:
             for model in self.simple_models:
@@ -428,6 +528,7 @@ def get_model_names(model):
     names=['flags',
            'pars',
            'pars_cov',
+           'cen',
            'flux',
            'flux_err',
            'flux_cov',
