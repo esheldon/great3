@@ -23,6 +23,17 @@ def get_obj_range(options):
 
     return obj_range
 
+def run(conf):
+    if 'rg' in conf['run']:
+        fitter=great3.rg.RGFitter(**conf)
+    elif 'nfit' in conf['run']:
+        fitter=great3.nfit.NGMixFitter(**conf)
+
+    fitter.go()
+
+    data=fitter.get_data()
+    return data
+
 def main():
     options,args = parser.parse_args(sys.argv[1:])
 
@@ -40,10 +51,7 @@ def main():
     outfile=files.get_output_file(**conf)
     print("will write to file:",outfile)
 
-    rg=great3.rg.RGFitter(**conf)
-    rg.go()
-
-    data=rg.get_data()
+    data=run(conf)
 
     files.write_fits_clobber(outfile, data)
 

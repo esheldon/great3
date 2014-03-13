@@ -23,12 +23,47 @@ class RGFitter(FitterBase):
                               psf_image, psf_cen)
         return res
 
+    def _get_odd_psf_image(self, im):
+        dims=im.shape
+        ch1=(dims[0] % 2) == 0
+        ch2=(dims[1] % 2) == 0
+        if ch1 or ch2:
+            if ch1:
+                d1=dims[0]-1
+            else:
+                d1=dims[0]
+            if ch2:
+                d2=dims[1]-1
+            else:
+                d2=dims[1]
+
+
+            if False:
+                import ngmix
+                pars=[(d1-1)/2., (d2-1)/2., 0.0, 0.0, 6.0, 1.0]
+                #pars=[d1/2., d2/2., 0.0, 0.0, 6.0, 1.0]
+                #tg=ngmix.gmix.GMixModel(pars,'gauss')
+                tg=ngmix.gmix.GMixModel(pars,'turb')
+                # use nsub=1 for simpler test
+                new_image = tg.make_image([d1,d2],nsub=1)
+            else:
+                new_image = im[0:d1, 0:d2]
+
+        else:
+            new_image=im
+
+        return new_image
+
     def _run_regauss(self,
                      gal_image, gal_cen,
-                     psf_image, psf_cen):
+                     psf_image_in, psf_cen):
 
         import admom
 
+        psf_image = self._get_odd_psf_image(psf_image_in)
+        #print("not using odd")
+        #psf_image=psf_image_in
+        
         ntry=self.ntry
         for i in xrange(ntry):
 
@@ -43,7 +78,9 @@ class RGFitter(FitterBase):
                                psf_cen_guess[1],
                                guess_psf=psf_irr_guess,
                                guess=gal_irr_guess,
-                               sigsky=self.skysig)
+                               sigsky=self.skysig,
+                               debug=self.conf['debug'],
+                               conv=self.conf['conv'])
             rg.do_all()
 
             res = rg['rgcorrstats']
@@ -266,6 +303,7 @@ def get_shear(data, **keys):
     shear_cov[1,1]=g2err**2
 
     out={'shear':shear,
+         'shear_err':shear_err,
          'shear_cov':shear_cov,
          'ssh':ssh,
          'R':R,
@@ -276,6 +314,8 @@ def get_weight_and_ssh(e1, e2, err, **keys):
     """
     err is per component, as is the shape noise
     """
+    from .shapenoise import get_shape_noise
+
     esq = e1**2 + e2**2
     err2=err**2
 
@@ -298,32 +338,48 @@ def get_weight_and_ssh(e1, e2, err, **keys):
 
     return weight, ssh
 
-_SN2={'exp':None,'dev':None}
-def get_shape_noise(type):
-    """
-    get the shape noise per component
-    """
-    if _SN2[type] is None:
 
-        import ngmix
+def test_R_cuts(data, max_ellip=4.0, max_err=0.5):
+    import biggles
+    R_max=1.0
+    
+    n=20
+    R_minvals=numpy.linspace(0.3, 0.8, n)
+
+    sh1=numpy.zeros(n)
+    sh1err=numpy.zeros(n)
+    sh2=numpy.zeros(n)
+    sh2err=numpy.zeros(n)
+
+    for i in xrange(n):
+        R_min=R_minvals[i]
+        w=select(data,
+                 max_ellip=max_ellip,
+                 max_err=max_err,
+                 R_range=[R_min,R_max])
         
-        if type=='exp':
-            g_prior=ngmix.priors.make_gprior_cosmos_exp()
-        elif type=='dev':
-            g_prior=ngmix.priors.make_gprior_cosmos_dev()
-        else:
-            raise ValueError("bad shape noise type: '%s'" % type)
+        res=get_shear(data[w])
 
-        n=100000
-        g1,g2 = g_prior.sample2d(n)
-        e1=g1.copy()
-        e2=g2.copy()
-        for i in xrange(n):
-            e1[i], e2[i] = ngmix.shape.g1g2_to_e1e2(g1[i],g2[i])
-        _SN2[type] = e1.var()
-
-        print("SN2['%s']: %s" % (type,_SN2[type]))
-
-    return _SN2[type]
+        sh1[i] = res['shear'][0]
+        sh2[i] = res['shear'][1]
+        sh1err[i] = res['shear_err'][0]
+        sh2err[i] = res['shear_err'][1]
 
 
+    plt=biggles.FramedPlot()
+
+    pts1=biggles.Points(R_minvals, sh1, type='filled circle', color='blue')
+    err1=biggles.SymmetricErrorBarsY(R_minvals, sh1, sh1err, color='blue')
+    pts2=biggles.Points(R_minvals, sh2, type='filled triangle', color='red')
+    err2=biggles.SymmetricErrorBarsY(R_minvals, sh2, sh1err, color='red')
+
+    pts1.label=r'$g_1$'
+    pts2.label=r'$g_2$'
+
+    key=biggles.PlotKey(0.9, 0.1, [pts1, pts2],halign='right')
+
+    plt.add(pts1, err1, pts2, err2, key)
+
+    plt.xlabel=r'$R_{min}$'
+    plt.ylabel=r'$<g>$'
+    plt.show()
