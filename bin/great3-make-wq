@@ -1,0 +1,157 @@
+#!/usr/bin/env python
+"""
+    %prog config_file
+"""
+from __future__ import print_function
+
+import sys
+import os
+import yaml
+
+import great3
+from great3 import files
+
+from optparse import OptionParser
+parser=OptionParser(__doc__)
+
+_wq_template="""
+command: |
+    {master_script} {subid} {first} {last} {logfile}
+
+job_name: "{job_name}"
+"""
+
+_master_template="""#!/bin/bash
+
+function rungreat {
+    echo "host: $(hostname)"
+
+    great3-run --obj-range ${first},${last} ${config} ${subid}
+    status=$?
+
+    if [[ $status != "0" ]]; then
+        echo "error running great3: $status"
+    fi
+
+    return $status
+}
+
+
+subid=$1
+first=$2
+last=$3
+logfile=$4
+
+config="%(config)s"
+
+# temporary log file, to be transferred later
+tmpdir=$TMPDIR/great3-tmp-$RANDOM-$RANDOM
+
+cd $tmpdir
+
+tmplog=$(basename $logfile)
+
+rungreat &> ${tmplog}
+status=$?
+
+echo "moving log file ${tmplog} -> ${logfile}" >> ${tmplog}
+
+# errors go to the jobs stderr
+mv -fv "${tmplog}" "${logfile}" 1>&2
+
+status2=$?
+
+if [[ $status2 != "0" ]]; then
+    # this error message will go to main error file
+    echo "error ${status2} moving log to: ${logfile}" 1>&2
+
+    status=$status2
+fi
+
+rm -rv $tmpdir
+
+exit $status
+"""
+
+def write_wq_file(conf):
+
+    run=conf['run']
+
+    seconds_per=conf['sec_per']
+    nper=conf['nper']
+    time_hours = nper*seconds_per/3600.0
+
+    print('seconds per:',seconds_per)
+    print('nper:',nper)
+    print('time hours:',time_hours)
+
+    low,high = files.get_chunk_ranges(nper)
+
+    # number of sub-fields
+    nsub=files.get_nsub(**conf)
+
+    for subid in xrange(nsub):
+
+        for first,last in zip(low,high):
+
+            conf['subid'] = subid
+            conf['first'] = first
+            conf['last'] = last
+            conf['obj_range'] = [first, last]
+
+            output = files.get_output_file(**conf)
+            logfile = output.replace('.fits','.log')
+
+            job_name='%s-%05d-%05d' % (run,first,last)
+
+            conf['logfile'] = logfile
+            conf['job_name'] = job_name
+
+            wqfile = files.get_wq_file(**conf)
+            with open(wqfile,'w') as fobj:
+                wqtext=_wq_template % conf
+
+                fobj.write(wqtext)
+
+
+def write_master(config_filename, conf):
+
+    master_script=files.get_master_script_file(**conf)
+
+    conf['config'] = config_filename
+    print(master_script)
+    with open(master_script,'w') as fobj:
+        fobj.write(_master_template % conf)
+    print()
+
+    os.system('chmod 755 %s' % master_script)
+    return master_script
+
+def make_some_dirs(conf):
+    output_dir=files.get_output_dir(**conf)
+    condor_dir=files.get_condor_dir(**conf)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    if not os.path.exists(condor_dir):
+        os.makedirs(condor_dir)
+
+def main():
+
+    options,args = parser.parse_args(sys.argv[1:])
+
+    if len(args) < 1:
+        parser.print_help()
+        sys.exit(45)
+
+    config_filename=args[0]
+
+    conf = yaml.load(open(config_filename))
+
+    make_some_dirs(conf)
+    conf['master_script']=write_master(config_filename, conf)
+
+    write_wq_file(conf)
+
+main()
