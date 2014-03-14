@@ -128,7 +128,8 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     gmm.fit(data)
 
     if not gmm.converged_:
-        raise ValueError("did not converge")
+        print "DID NOT CONVERGE"
+        #raise ValueError("did not converge")
 
     return gmm
 
