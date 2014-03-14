@@ -1,16 +1,17 @@
 """
 Fit joint flux-size distribution
 """
+from __future__ import print_function
 
 import os
 import numpy
+from numpy import log10, sqrt, zeros
 
 from . import files
 
-NGAUSS_DEFAULT=8
-N_ITER_DEFAULT=1000
-MIN_COVAR=1.0e-6
-COVARIANCE_TYPE='full'
+NGAUSS_DEFAULT=16
+N_ITER_DEFAULT=5000
+MIN_COVAR=1.0e-12
 
 def make_joint_gmm(means, covars, weights):
     """
@@ -23,7 +24,7 @@ def make_joint_gmm(means, covars, weights):
     gmm=GMM(n_components=ngauss,
             n_iter=N_ITER_DEFAULT,
             min_covar=MIN_COVAR,
-            covariance_type=COVARIANCE_TYPE)
+            covariance_type='full')
     gmm.means_ = means.copy()
     gmm.covars_ = covars.copy()
     gmm.weights_ = weights.copy()
@@ -41,12 +42,59 @@ _par_labels[5] = [r'$\eta_1$',
                   r'$log_{10}(F_b)$',
                   r'$log_{10}(F_d)$']
 
-def fit_joint(pars,
+
+def make_logpars_and_subtract_mean_shape(field_list):
+    """
+    Subtract the mean g1,g2 from each field.
+
+    Store pars as eta1,eta2 and log of T and fluxes
+    """
+    import lensing
+
+    ndim = field_list[0].shape[1]
+
+    nobj=0
+    for f in field_list:
+        nobj += f.shape[0]
+
+    print("nobj:",nobj)
+    print("ndim:",ndim)
+    logpars = zeros( (nobj, ndim) )
+
+    start=0
+    for f in field_list:
+
+        nf = f.shape[0]
+        end = start + nf
+
+        print(start,end)
+
+        g1=f[:,0]
+        g2=f[:,1]
+
+        g1 -= g1.mean()
+        g2 -= g2.mean()
+
+        eta1, eta2 = lensing.util.g1g2_to_eta1eta2(g1,g2)
+
+        logpars[start:end, 0] = eta1
+        logpars[start:end, 1] = eta2
+
+        logpars[start:end, 2] = log10( f[:,2] )
+
+        logpars[start:end, 3:] = log10( f[:,3:] )
+
+        start += nf
+
+    return logpars
+
+def fit_joint(field_list,
               ngauss=NGAUSS_DEFAULT,
               n_iter=N_ITER_DEFAULT,
               min_covar=MIN_COVAR,
               show=False,
-              eps=None):
+              eps=None,
+              fname=None):
     """
     pars should be [nobj, ndim]
 
@@ -55,60 +103,33 @@ def fit_joint(pars,
     for bdf this would be
         g1,g2,T,flux_b,flux_d
     """
-    import lensing
 
-    ndim = pars.shape[1]
+    logpars = make_logpars_and_subtract_mean_shape(field_list)
+    ndim = logpars.shape[1]
     assert (ndim==4 or ndim==5),"ndim should be 4 or 5"
 
     par_labels=_par_labels[ndim]
 
-    logpars = pars.copy()
+    gmm=fit_gmix(logpars, ngauss, n_iter, min_covar=min_covar)
 
-    eta1, eta2 = lensing.util.g1g2_to_eta1eta2(pars[:,0], pars[:,1])
-
-    log_T = numpy.log10( pars[:,2] )
-
-    logpars[:,0] = eta1
-    logpars[:,1] = eta2
-    logpars[:,2] = log_T
-
-    logpars[:,3:] = numpy.log10( pars[:,3:] )
-
-    gmm=fit_gmix(logpars,ngauss,n_iter, min_covar=min_covar)
-
-    output=numpy.zeros(ngauss, dtype=[('means','f8',ndim),
+    output=zeros(ngauss, dtype=[('means','f8',ndim),
                                       ('covars','f8',(ndim,ndim)),
+                                      ('icovars','f8',(ndim,ndim)),
                                       ('weights','f8')])
     output['means']=gmm.means_
     output['covars']=gmm.covars_
     output['weights']=gmm.weights_
 
+    for i in xrange(ngauss):
+        output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
+
     plot_fits(logpars, gmm, eps=eps, par_labels=par_labels, show=show)
 
-    """
-    extra='ngauss%d' % ngauss
-    eps=files.get_dist_path(version,model,'joint-dist',ext='eps',
-                            extra=extra)
-    gmmtest=make_joint_gmm(output['means'], output['covars'], output['weights'])
-
-
-    flux_mode = 10.0**log_flux_mode
-    T_near = 10.0**log_T_near
-
-    print
-    print 'log_flux_mode:',log_flux_mode
-    print 'log_T_near:   ',log_T_near
-    print 'flux_mode:    ',flux_mode
-    print 'T_near:       ',T_near
-
-    h={'logfmode':log_flux_mode,
-       'fmode':flux_mode,
-       'logTnear':log_T_near,
-       'Tnear':T_near}
-    files.write_dist(version, model, 'joint-dist', output,header=h,
-                     extra=extra)
-
-    """
+    if fname is not None:
+        import fitsio
+        print('writing:',fname)
+        fitsio.write(fname, output, clobber=True)
+    return output
 
 def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     """
@@ -123,13 +144,12 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     gmm=GMM(n_components=ngauss,
             n_iter=n_iter,
             min_covar=MIN_COVAR,
-            covariance_type=COVARIANCE_TYPE)
+            covariance_type='full')
 
     gmm.fit(data)
 
     if not gmm.converged_:
-        print "DID NOT CONVERGE"
-        #raise ValueError("did not converge")
+        print("DID NOT CONVERGE")
 
     return gmm
 
@@ -149,9 +169,16 @@ def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
 
     samples=gmm.sample(num*100)
 
-    nrow,ncol = images.get_grid(ndim) 
+    nrow,ncol = images.get_grid(ndim+1) 
 
     tab=biggles.Table(nrow,ncol)
+
+    gtot=sqrt( pars[:,0]**2 + pars[:,1]**2 )
+    rgtot=sqrt( samples[:,0]**2 + samples[:,1]**2 )
+
+    plt = _plot_single(gtot, rgtot)
+    plt.xlabel = r'$|\eta|$'
+    tab[0,0] = plt
 
     for dim in xrange(ndim):
         plt = _plot_single(pars[:,dim], samples[:,dim])
@@ -160,18 +187,18 @@ def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
         else:
             plt.xlabel=r'$P_%s$' % dim
 
-        row=dim/ncol
-        col=dim % ncol
+        row=(dim+1)/ncol
+        col=(dim+1) % ncol
 
         tab[row,col] = plt
 
-    tab.aspect_ratio=ncol/float(nrow)
+    tab.aspect_ratio=nrow/float(ncol)
 
     if show:
         tab.show()
 
     if eps:
-        print eps
+        print(eps)
         d=os.path.dirname(eps)
         if not os.path.exists(d):
             os.makedirs(d)
@@ -179,9 +206,9 @@ def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
 
 def log_T_to_log_sigma(log_T):
     T = 10.0**log_T
-    sigma = numpy.sqrt(T/2.0 )
+    sigma = sqrt(T/2.0 )
 
-    log_sigma = numpy.log10( sigma )
+    log_sigma = log10( sigma )
 
     return log_sigma
 
@@ -208,7 +235,7 @@ def _plot_single(data, samples):
     sample_ph.label = 'joint fit'
 
 
-    key = biggles.PlotKey(0.9, 0.9, [ph, sample_ph], halign='right')
+    key = biggles.PlotKey(0.1, 0.9, [ph, sample_ph], halign='left')
 
     plt = biggles.FramedPlot()
 
