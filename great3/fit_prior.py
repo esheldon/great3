@@ -13,7 +13,7 @@ NGAUSS_DEFAULT=16
 N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 
-def make_joint_gmm(means, covars, weights):
+def make_joint_gmm(weights, means, covars):
     """
     Make a GMM object from the inputs
     """
@@ -113,9 +113,10 @@ def fit_joint(field_list,
     gmm=fit_gmix(logpars, ngauss, n_iter, min_covar=min_covar)
 
     output=zeros(ngauss, dtype=[('means','f8',ndim),
-                                      ('covars','f8',(ndim,ndim)),
-                                      ('icovars','f8',(ndim,ndim)),
-                                      ('weights','f8')])
+                                ('covars','f8',(ndim,ndim)),
+                                ('icovars','f8',(ndim,ndim)),
+                                ('weights','f8'),
+                                ('norm','f8')])
     output['means']=gmm.means_
     output['covars']=gmm.covars_
     output['weights']=gmm.weights_
