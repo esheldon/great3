@@ -157,7 +157,7 @@ def write_condor_file(conf, master_script, max_jobs, missing=False):
             logfile = output.replace('.fits','.log')
 
 
-            job_name='%s-%05d-%05d' % (overall_name,first,last)
+            job_name='%s-%02d-%05d-%05d' % (overall_name,subid,first,last)
 
             conf['logfile'] = logfile
             conf['job_name'] = job_name

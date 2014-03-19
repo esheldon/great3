@@ -888,6 +888,19 @@ class NGMixFitter(FitterBase):
      
         self.data=data
 
+def get_shear(data, model):
+    """
+    Calculate the shear from the pqr stats
+    """
+    import lensing
+    Pname='%s_P' % model
+    Qname='%s_Q' % model
+    Rname='%s_R' % model
+    sh,cov=lensing.pqr.get_pqr_shear(t[Pname],t[Qname],t[Rname])
+    res={'shear':sh,
+         'shear_cov':cov}
+    return res
+
 def get_joint_prior(conf):
     import ngmix
     from . import joint_prior

@@ -25,6 +25,9 @@ def do_calc_mean_shear(conf, cuts, subid):
 
     if 'rg' in conf['run']:
         res=great3.rg.select_and_calc_shear(data, **cuts)
+    elif 'nfit' in conf['run']:
+        model=conf['fit_models'][0]
+        res=great3.nfit.get_shear(data, model)
     else:
         raise ValueError("unsupported run type: '%s'" % conf['run'])
 
