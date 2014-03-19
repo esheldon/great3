@@ -17,6 +17,9 @@ parser=OptionParser(__doc__)
 
 parser.add_option('--obj-range',default=None,
                   help="obj range as csv")
+parser.add_option('--make-plots',action='store_true',
+                  help="make some plots")
+
 
 def get_checkpoint_data(output_file):
     """
@@ -84,6 +87,8 @@ def main():
     conf['output_file']=outfile
     conf['checkpoint_file'], conf['checkpoint_data'] = \
             get_checkpoint_data(conf['output_file'])
+
+    conf['make_plots'] = options.make_plots
 
     data=run(conf)
 

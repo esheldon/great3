@@ -74,7 +74,11 @@ class NGMixFitter(FitterBase):
             self.res['flags'] = PSF_FIT_FAILURE
             print("psf failure at object",index)
         else:
-            self.res['psf_gmix'] = fitter.get_gmix()
+            psf_gmix = fitter.get_gmix()
+            print("psf fit:")
+            print(psf_gmix)
+            print("psf T:",psf_gmix.get_T())
+            self.res['psf_gmix']=psf_gmix
 
             if self.make_plots:
                 self._compare_psf(fitter)
@@ -415,7 +419,7 @@ class NGMixFitter(FitterBase):
         guess[:,0] = widths[0]*srandu(nwalkers)
         guess[:,1] = widths[1]*srandu(nwalkers)
 
-        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2:2+2])
+        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2])
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
@@ -431,12 +435,17 @@ class NGMixFitter(FitterBase):
         """
         import ngmix
 
+        if self.joint_prior is not None:
+            return self._fit_bdf_joint()
+
         priors=self.priors['bdf']
+
         g_prior=priors['g']
         T_prior=priors['T']
         counts_prior=priors['counts']
         cen_prior=self.cen_prior
         bfrac_prior=self.bfrac_prior
+
 
         res=self.res
         conf=self.conf
@@ -488,7 +497,7 @@ class NGMixFitter(FitterBase):
         guess[:,0] = widths[0]*srandu(nwalkers)
         guess[:,1] = widths[1]*srandu(nwalkers)
 
-        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2:2+2])
+        guess_shape=get_shape_guess(g1, g2, nwalkers, width=widths[2])
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
@@ -509,6 +518,86 @@ class NGMixFitter(FitterBase):
         guess[:,6] = dfracs*counts_guess
 
         return guess
+
+
+    def _fit_bdf_joint(self):
+        """
+        Fit the bdf model using joint prior, taking guesses from our previous
+        em fits
+        """
+        import ngmix
+        from ngmix.fitting import MCMCBDFJoint
+
+        cen_prior=self.cen_prior
+
+        res=self.res
+        conf=self.conf
+
+        full_guess=self._get_guess_bdf_joint()
+
+        fitter=MCMCBDFJoint(self.gal_image,
+                            self.weight_image,
+                            res['jacob'],
+                            psf=res['psf_gmix'],
+
+                            nwalkers=conf['nwalkers'],
+                            burnin=conf['burnin'],
+                            nstep=conf['nstep'],
+                            mca_a=conf['mca_a'],
+
+                            Tfracdiff_max=conf['Tfracdiff_max'],
+
+                            full_guess=full_guess,
+
+                            cen_prior=cen_prior,
+                            joint_prior=self.joint_prior,
+
+                            do_pqr=conf['do_pqr'])
+
+
+        fitter.go()
+
+        self.res['bdf'] = {'fitter':fitter,
+                           'res':fitter.get_result()}
+
+
+    def _get_guess_bdf_joint(self):
+        """
+        Get a guess centered on the truth
+
+        width is relative for T and counts
+        """
+
+        width = 0.01
+
+        nwalkers = self.conf['nwalkers']
+
+        res=self.res
+        gmix = res['em_gmix']
+        g1,g2,T = gmix.get_g1g2T()
+        flux = res['em_gauss_flux']
+
+
+        guess=numpy.zeros( (nwalkers, 7) )
+
+        guess[:,0] = width*srandu(nwalkers)
+        guess[:,1] = width*srandu(nwalkers)
+
+        guess_shape=get_shape_guess(g1,g2,nwalkers,width=width)
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        guess[:,4] = get_positive_guess(T,nwalkers,width=width)
+
+        # got anything better?
+        Fb = 0.1*flux
+        Fd = 0.9*flux
+        guess[:,5] = get_positive_guess(Fb,nwalkers,width=width)
+        guess[:,6] = get_positive_guess(Fd,nwalkers,width=width)
+
+        return guess
+
+
 
 
 
@@ -595,6 +684,8 @@ class NGMixFitter(FitterBase):
         conf=self.conf
         self.fit_models=conf['fit_models']
         self.make_plots = conf['make_plots']
+        if self.make_plots:
+            print("will make plots!")
 
         self._unpack_priors()
 
@@ -618,34 +709,38 @@ class NGMixFitter(FitterBase):
         nmod=len(self.fit_models)
 
         self.cen_prior=get_cen_prior(conf)
+        self.joint_prior=get_joint_prior(conf)
 
-        T_priors=get_T_priors(conf)
-        counts_priors=get_counts_priors(conf)
-        g_priors=get_g_priors(conf)
+        if self.joint_prior is not None:
+            self.priors=None
+        else:
+            T_priors=get_T_priors(conf)
+            counts_priors=get_counts_priors(conf)
+            g_priors=get_g_priors(conf)
 
-        if (len(T_priors) != nmod
-                or len(g_priors) != nmod
-                or len(g_priors) != nmod):
-            raise ValueError("models and T,counts,g priors must be same length")
+            if (len(T_priors) != nmod
+                    or len(g_priors) != nmod
+                    or len(g_priors) != nmod):
+                raise ValueError("models and T,counts,g priors must be same length")
 
-        priors={}
-        for i in xrange(nmod):
-            model=self.fit_models[i]
+            priors={}
+            for i in xrange(nmod):
+                model=self.fit_models[i]
 
-            T_prior=T_priors[i]
+                T_prior=T_priors[i]
 
-            # note it is a list
-            counts_prior=counts_priors[i]
+                # note it is a list
+                counts_prior=counts_priors[i]
 
-            g_prior=g_priors[i]
-            
-            modlist={'T':T_prior, 'counts':counts_prior,'g':g_prior}
-            priors[model] = modlist
+                g_prior=g_priors[i]
+                
+                modlist={'T':T_prior, 'counts':counts_prior,'g':g_prior}
+                priors[model] = modlist
 
-        self.priors=priors
+            self.priors=priors
 
-        # bulge+disk fixed size ratio
-        self.bfrac_prior=get_bfrac_prior(conf)
+            # bulge+disk fixed size ratio
+            self.bfrac_prior=get_bfrac_prior(conf)
 
     def _print_res(self, res):
         pass
@@ -793,11 +888,24 @@ class NGMixFitter(FitterBase):
      
         self.data=data
 
+def get_joint_prior(conf):
+    import ngmix
+    from . import joint_prior
+
+    jptype = conf.get('joint_prior_type',None)
+    if jptype==None:
+        jp=None
+    else:
+        jp=joint_prior.make_joint_prior_bdf(type=jptype)
+
+    return jp
 
 def get_T_priors(conf):
     import ngmix
 
-    T_prior_types=conf['T_prior_types']
+    T_prior_types=conf.get('T_prior_types',None)
+    if T_prior_types is None:
+        return None
 
     T_priors=[]
     for i,typ in enumerate(T_prior_types):
@@ -821,7 +929,9 @@ def get_T_priors(conf):
 def get_counts_priors(conf):
     import ngmix
 
-    counts_prior_types=conf['counts_prior_types']
+    counts_prior_types=conf.get('counts_prior_types',None)
+    if counts_prior_types is None:
+        return None
 
     counts_priors=[]
     for i,typ in enumerate(counts_prior_types):
@@ -836,9 +946,13 @@ def get_counts_priors(conf):
     return counts_priors
 
 
+
 def get_g_priors(conf):
     import ngmix
-    g_prior_types=conf['g_prior_types']
+    g_prior_types=conf.get('g_prior_types',None)
+
+    if g_prior_types is None:
+        return None
 
     g_priors=[]
     for i,typ in enumerate(g_prior_types):
@@ -924,7 +1038,7 @@ def get_model_names(model):
 
     return ndict
 
-def get_shape_guess(g1, g2, n, width=[0.01,0.01]):
+def get_shape_guess(g1, g2, n, width=0.01):
     """
     Get guess, making sure in range
     """
@@ -938,8 +1052,8 @@ def get_shape_guess(g1, g2, n, width=[0.01,0.01]):
 
         while True:
             try:
-                g1_offset = width[0]*srandu()
-                g2_offset = width[1]*srandu()
+                g1_offset = width*srandu()
+                g2_offset = width*srandu()
                 shape_new=shape.copy()
                 shape_new.shear(g1_offset, g2_offset)
                 break
