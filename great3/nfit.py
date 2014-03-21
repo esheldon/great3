@@ -896,7 +896,7 @@ def get_shear(data, model):
     Pname='%s_P' % model
     Qname='%s_Q' % model
     Rname='%s_R' % model
-    sh,cov=lensing.pqr.get_pqr_shear(t[Pname],t[Qname],t[Rname])
+    sh,cov=lensing.pqr.get_pqr_shear(data[Pname],data[Qname],data[Rname])
     res={'shear':sh,
          'shear_cov':cov}
     return res
