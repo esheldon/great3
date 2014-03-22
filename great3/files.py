@@ -7,6 +7,30 @@ import numpy
 
 from .constants import *
 
+def get_config_dir():
+    """
+    get the config directory
+    """
+    d=os.environ['GREAT3_CONFIG_DIR']
+    return d
+
+def get_config_file(run):
+    """
+    get the config directory
+    """
+    d=get_config_dir()
+    fname='run-%s.yaml' % run
+    return os.path.join(d,fname)
+
+def read_config(run):
+    """
+    get the config directory
+    """
+    import yaml
+    fname=get_config_file(run)
+    return yaml.load(open(fname))
+
+
 def get_dir():
     """
     The GREAT3_DATA_DIR environment variable must be set
@@ -417,6 +441,30 @@ def read_output(**keys):
 
     data=fitsio.read(fname)
     return data
+
+def get_prior_file(**keys):
+    """
+    Files concerning the distribution of parameters in the deep fields
+    """
+    d=get_output_dir(**keys)
+
+    if 'subid' in keys:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s-dist.%(ext)s'
+    else:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-dist.%(ext)s'
+
+    fname = fname % keys
+
+    return os.path.join(d, fname)
+
+def read_prior(**keys):
+    """
+    read the prior file
+    """
+    import fitsio
+    fname=get_prior_file(**keys)
+    print("reading:",fname)
+    return fitsio.read(fname)
 
 
 def get_condor_dir(**keys):

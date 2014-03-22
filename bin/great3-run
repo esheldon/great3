@@ -54,11 +54,10 @@ def get_obj_range(options):
 def run(conf):
 
 
-
-    if 'rg' in conf['run']:
-        fitter=great3.rg.RGFitter(**conf)
-    elif 'nfit' in conf['run']:
+    if 'nfit' in conf['run']:
         fitter=great3.nfit.NGMixFitter(**conf)
+    elif 'rg' in conf['run']:
+        fitter=great3.rg.RGFitter(**conf)
     else:
         raise ValueError("bad run: '%s'" % conf['run'])
 

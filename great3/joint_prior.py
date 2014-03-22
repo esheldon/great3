@@ -1,17 +1,37 @@
+from . import files
 from numpy import array
 
-def make_joint_prior_bdf(type="great3-control-ground-constant"):
+def make_joint_prior_exp(type="great3-real_galaxy-ground-constant-exp"):
+    """
+    Make a joint prior 
+    """
+    from ngmix.joint_prior import JointPriorSimple
+
+    if type == "great3-real_galaxy-ground-constant-exp":
+        import great3
+        t=files.read_prior(experiment="real_galaxy",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-rgc-deep01",
+                           ext="fits")
+
+        p=JointPriorSimple(t['weights'],
+                           t['means'],
+                           t['covars'])
+    else:
+        raise ValueError("bad type: '%s'" % type)
+    return p
+
+def make_joint_prior_bdf(type="great3-control-ground-constant-bdf"):
     """
     Make a joint prior 
     """
     from ngmix.joint_prior import JointPriorBDF
 
-    if type == "great3-control-ground-constant":
+    if type == "great3-control-ground-constant-bdf":
         p=JointPriorBDF(_great3_bdf_weights,
                         _great3_bdf_means,
-                        _great3_bdf_covars,
-                        logT_bounds=[-1.3, 1.0],
-                        logFlux_bounds=[-3.0, 2.0])
+                        _great3_bdf_covars)
                        
     else:
         raise ValueError("bad type: '%s'" % type)
@@ -287,4 +307,5 @@ _great3_bdf_covars = array([[[  2.55297986e-01,  -2.49852700e-02,  -1.48801262e-
            1.43254209e-01,  -4.74133580e-02],
         [  5.05287719e-03,  -1.13756577e-02,   1.45396815e-02,
           -4.74133580e-02,   4.35961754e-02]]])
+
 

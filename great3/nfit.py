@@ -42,9 +42,17 @@ class NGMixFitter(FitterBase):
 
         self.weight_image = 0*self.gal_image + self.sky_ivar
 
-        rint=numpy.random.randint(9)
-        self.psf_image,self.psf_cen_guess = \
-                self.field.get_star_image(rint)
+        if self.conf['use_random_psf']:
+            rint=numpy.random.randint(9)
+            self.psf_image,self.psf_cen_guess = \
+                    self.field.get_star_image(rint)
+        else:
+            # otherwise we just use the first one. Make
+            # sure you have parameters set so that you really
+            # fit it well
+            if not hasattr(self,'_psf_image'):
+                self.psf_image,self.psf_cen_guess = \
+                        self.field.get_star_image(0)
 
 
     def _fit_psf(self): 
@@ -52,6 +60,13 @@ class NGMixFitter(FitterBase):
         Fit the psf image
         """
         
+        # if not using a random psf, just do the fit once
+        if not self.conf['use_random_psf']:
+            if hasattr(self,'psf_gmix'):
+                print("re-using psf fit")
+                self.res['psf_gmix']=self.psf_gmix
+                return
+
         conf=self.conf
         sigma_guess = conf['psf_fwhm_guess']/2.35
 
@@ -78,6 +93,8 @@ class NGMixFitter(FitterBase):
             print("psf fit:")
             print(psf_gmix)
             print("psf T:",psf_gmix.get_T())
+
+            self.psf_gmix=psf_gmix
             self.res['psf_gmix']=psf_gmix
 
             if self.make_plots:
@@ -210,6 +227,7 @@ class NGMixFitter(FitterBase):
                                   show=False)
 
         pname='psf-resid-%06d.png' % self.index
+        print("          ",pname)
         plt.write_img(1400,800,pname)
 
     def _do_gal_plots(self, model, fitter):
@@ -229,11 +247,13 @@ class NGMixFitter(FitterBase):
         if isinstance(tup, tuple):
             p,wp = tup
             wtrials_pname='wtrials-%06d-%s.png' % (self.index,model)
+            print("          ",wtrials_pname)
             wp.write_img(width,height,wtrials_pname)
         else:
             p = tup
 
         trials_pname='trials-%06d-%s.png' % (self.index,model)
+        print("          ",trials_pname)
         p.write_img(width,height,trials_pname)
 
     def _compare_gal(self, model, fitter):
@@ -257,6 +277,7 @@ class NGMixFitter(FitterBase):
                                   label2=model,
                                   show=False)
         pname='gal-resid-%06d-%s.png' % (self.index,model)
+        print("          ",pname)
         plt.write_img(1400,800,pname)
 
 

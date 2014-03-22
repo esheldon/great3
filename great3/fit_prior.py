@@ -9,9 +9,86 @@ from numpy import log10, sqrt, zeros
 
 from . import files
 
-NGAUSS_DEFAULT=16
+NGAUSS_DEFAULT=20
 N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
+
+
+def fit_joint_run(run, model, do_subfields=False):
+    import fitsio
+    conf=files.read_config(run)
+
+    pars_name='%s_pars' % model
+
+    field_list=[]
+    for subid in xrange(5):
+        conf['subid']=subid
+        data=files.read_output(**conf)
+
+        pars=data[pars_name][:,2:]
+        field_list.append(pars)
+
+        if do_subfields:
+            fits_name=files.get_prior_file(ext='fits', **conf)
+            eps_name=files.get_prior_file(ext='eps', **conf)
+            fit_joint([pars],
+                      fname=fits_name,
+                      eps=eps_name)
+
+    del conf['subid']
+    fits_name=files.get_prior_file(ext='fits', **conf)
+    eps_name=files.get_prior_file(ext='eps', **conf)
+    print(fits_name)
+    print(eps_name)
+
+    fit_joint(field_list,
+              fname=fits_name,
+              eps=eps_name)
+
+def fit_joint(field_list,
+              ngauss=NGAUSS_DEFAULT,
+              n_iter=N_ITER_DEFAULT,
+              min_covar=MIN_COVAR,
+              show=False,
+              eps=None,
+              fname=None):
+    """
+    pars should be [nobj, ndim]
+
+    for a simple model this would be
+        g1,g2,T,flux
+    for bdf this would be
+        g1,g2,T,flux_b,flux_d
+    """
+
+    logpars = make_logpars_and_subtract_mean_shape(field_list)
+    ndim = logpars.shape[1]
+    assert (ndim==4 or ndim==5),"ndim should be 4 or 5"
+
+    par_labels=_par_labels[ndim]
+
+    gmm=fit_gmix(logpars, ngauss, n_iter, min_covar=min_covar)
+
+    output=zeros(ngauss, dtype=[('means','f8',ndim),
+                                ('covars','f8',(ndim,ndim)),
+                                ('icovars','f8',(ndim,ndim)),
+                                ('weights','f8'),
+                                ('norm','f8')])
+    output['means']=gmm.means_
+    output['covars']=gmm.covars_
+    output['weights']=gmm.weights_
+
+    for i in xrange(ngauss):
+        output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
+
+    plot_fits(logpars, gmm, eps=eps, par_labels=par_labels, show=show)
+
+    if fname is not None:
+        import fitsio
+        print('writing:',fname)
+        fitsio.write(fname, output, clobber=True)
+    return output
+
 
 def make_joint_gmm(weights, means, covars):
     """
@@ -88,49 +165,6 @@ def make_logpars_and_subtract_mean_shape(field_list):
 
     return logpars
 
-def fit_joint(field_list,
-              ngauss=NGAUSS_DEFAULT,
-              n_iter=N_ITER_DEFAULT,
-              min_covar=MIN_COVAR,
-              show=False,
-              eps=None,
-              fname=None):
-    """
-    pars should be [nobj, ndim]
-
-    for a simple model this would be
-        g1,g2,T,flux
-    for bdf this would be
-        g1,g2,T,flux_b,flux_d
-    """
-
-    logpars = make_logpars_and_subtract_mean_shape(field_list)
-    ndim = logpars.shape[1]
-    assert (ndim==4 or ndim==5),"ndim should be 4 or 5"
-
-    par_labels=_par_labels[ndim]
-
-    gmm=fit_gmix(logpars, ngauss, n_iter, min_covar=min_covar)
-
-    output=zeros(ngauss, dtype=[('means','f8',ndim),
-                                ('covars','f8',(ndim,ndim)),
-                                ('icovars','f8',(ndim,ndim)),
-                                ('weights','f8'),
-                                ('norm','f8')])
-    output['means']=gmm.means_
-    output['covars']=gmm.covars_
-    output['weights']=gmm.weights_
-
-    for i in xrange(ngauss):
-        output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
-
-    plot_fits(logpars, gmm, eps=eps, par_labels=par_labels, show=show)
-
-    if fname is not None:
-        import fitsio
-        print('writing:',fname)
-        fitsio.write(fname, output, clobber=True)
-    return output
 
 def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     """
