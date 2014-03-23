@@ -1,7 +1,7 @@
 from . import files
 from numpy import array
 
-def make_joint_prior_exp(type="great3-real_galaxy-ground-constant-exp"):
+def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp"):
     """
     Make a joint prior 
     """
