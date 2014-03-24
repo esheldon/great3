@@ -449,9 +449,9 @@ def get_prior_file(**keys):
     d=get_output_dir(**keys)
 
     if 'subid' in keys:
-        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s-dist.%(ext)s'
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-%(run)s-%(partype)s-dist.%(ext)s'
     else:
-        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-dist.%(ext)s'
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(partype)s-dist.%(ext)s'
 
     fname = fname % keys
 

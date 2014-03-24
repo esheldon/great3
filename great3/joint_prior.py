@@ -1,23 +1,38 @@
 from . import files
 from numpy import array
 
-def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp"):
+def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars"):
     """
     Make a joint prior 
     """
-    from ngmix.joint_prior import JointPriorSimple
 
-    if type == "great3-real_galaxy-ground-constant-exp":
+    if type == "great3-real_galaxy-ground-constant-exp-logpars":
         import great3
+        from ngmix.joint_prior import JointPriorSimpleLogPars
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
                            shear_type="constant",
                            run="nfit-rgc-deep01",
+                           partype="logpars",
                            ext="fits")
 
-        p=JointPriorSimple(t['weights'],
-                           t['means'],
-                           t['covars'])
+        p=JointPriorSimpleLogPars(t['weights'],
+                                  t['means'],
+                                  t['covars'])
+    elif type == "great3-real_galaxy-ground-constant-exp-linpars":
+        import great3
+        from ngmix.joint_prior import JointPriorSimpleLinPars
+        t=files.read_prior(experiment="real_galaxy",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-rgc-deep01",
+                           partype="linpars",
+                           ext="fits")
+
+        p=JointPriorSimpleLinPars(t['weights'],
+                                  t['means'],
+                                  t['covars'])
+
     else:
         raise ValueError("bad type: '%s'" % type)
     return p

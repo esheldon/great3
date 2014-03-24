@@ -14,7 +14,7 @@ N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 
 
-def fit_joint_run(run, model, do_subfields=False):
+def fit_joint_run(run, model, do_subfields=False, **keys):
     import fitsio
     conf=files.read_config(run)
 
@@ -33,9 +33,16 @@ def fit_joint_run(run, model, do_subfields=False):
             eps_name=files.get_prior_file(ext='eps', **conf)
             fit_joint([pars],
                       fname=fits_name,
-                      eps=eps_name)
+                      eps=eps_name,
+                      **keys)
 
     del conf['subid']
+
+    dolog=keys.get('dolog',True)
+    if dolog:
+        conf['partype']='logpars'
+    else:
+        conf['partype']='linpars'
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
     print(fits_name)
@@ -43,7 +50,8 @@ def fit_joint_run(run, model, do_subfields=False):
 
     fit_joint(field_list,
               fname=fits_name,
-              eps=eps_name)
+              eps=eps_name,
+              **keys)
 
 def fit_joint(field_list,
               ngauss=NGAUSS_DEFAULT,
@@ -51,7 +59,9 @@ def fit_joint(field_list,
               min_covar=MIN_COVAR,
               show=False,
               eps=None,
-              fname=None):
+              fname=None,
+              dolog=True,
+              **keys):
     """
     pars should be [nobj, ndim]
 
@@ -61,13 +71,32 @@ def fit_joint(field_list,
         g1,g2,T,flux_b,flux_d
     """
 
-    logpars = make_logpars_and_subtract_mean_shape(field_list)
-    ndim = logpars.shape[1]
+    print("ngauss:   ",ngauss)
+    print("n_iter:   ",n_iter)
+    print("min_covar:",min_covar)
+    if dolog:
+        print("using log pars")
+        usepars = make_logpars_and_subtract_mean_shape(field_list)
+    else:
+        print("using linear pars")
+        usepars=make_combined_pars(field_list)
+
+        T_max=keys.get('T_max',1.5)
+        Flux_max=keys.get('Flux_max',10.0)
+        Ftot=usepars[:,3:].sum(axis=1)
+        w,=numpy.where( (usepars[:,2] < T_max) & (Ftot < Flux_max) )
+        print("keeping %s/%s" % (w.size,usepars.shape[0]))
+        usepars=usepars[w,:]
+
+    ndim = usepars.shape[1]
     assert (ndim==4 or ndim==5),"ndim should be 4 or 5"
 
-    par_labels=_par_labels[ndim]
+    if dolog:
+        par_labels=_par_labels_log[ndim]
+    else:
+        par_labels=_par_labels_lin[ndim]
 
-    gmm=fit_gmix(logpars, ngauss, n_iter, min_covar=min_covar)
+    gmm=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
 
     output=zeros(ngauss, dtype=[('means','f8',ndim),
                                 ('covars','f8',(ndim,ndim)),
@@ -81,7 +110,8 @@ def fit_joint(field_list,
     for i in xrange(ngauss):
         output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
 
-    plot_fits(logpars, gmm, eps=eps, par_labels=par_labels, show=show)
+    plot_fits(usepars, gmm, eps=eps, par_labels=par_labels, show=show,
+              dolog=dolog)
 
     if fname is not None:
         import fitsio
@@ -108,16 +138,59 @@ def make_joint_gmm(weights, means, covars):
 
     return gmm
 
-_par_labels={}
-_par_labels[4] = [r'$\eta_1$',
-                  r'$\eta_2$',
-                  r'$log_{10}(T)$',
-                  r'$log_{10}(F)$']
-_par_labels[5] = [r'$\eta_1$',
-                  r'$\eta_2$',
-                  r'$log_{10}(T)$',
-                  r'$log_{10}(F_b)$',
-                  r'$log_{10}(F_d)$']
+_par_labels_log={}
+_par_labels_log[4] = [r'$\eta_1$',
+                      r'$\eta_2$',
+                      r'$log_{10}(T)$',
+                      r'$log_{10}(F)$']
+_par_labels_log[5] = [r'$\eta_1$',
+                      r'$\eta_2$',
+                      r'$log_{10}(T)$',
+                      r'$log_{10}(F_b)$',
+                      r'$log_{10}(F_d)$']
+
+_par_labels_lin={}
+_par_labels_lin[4] = [r'$g_1$',
+                      r'$g_2$',
+                      r'$T$',
+                      r'$F$']
+_par_labels_lin[5] = [r'$g_1$',
+                      r'$g_2$',
+                      r'$T$',
+                      r'$F_b$',
+                      r'$F_d$']
+
+
+
+def make_combined_pars(field_list):
+    """
+    just make the combined pars
+    """
+    import lensing
+
+    ndim = field_list[0].shape[1]
+
+    nobj=0
+    for f in field_list:
+        nobj += f.shape[0]
+
+    print("nobj:",nobj)
+    print("ndim:",ndim)
+    pars = zeros( (nobj, ndim) )
+
+    start=0
+    for f in field_list:
+
+        nf = f.shape[0]
+        end = start + nf
+
+        print(start,end)
+
+        pars[start:end, :] = f[:,:]
+
+        start += nf
+
+    return pars
 
 
 def make_logpars_and_subtract_mean_shape(field_list):
@@ -189,7 +262,7 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     return gmm
 
 
-def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
+def plot_fits(pars, gmm, dolog=True, show=False, eps=None, par_labels=None):
     """
     """
     import esutil as eu
@@ -212,7 +285,10 @@ def plot_fits(pars, gmm, show=False, eps=None, par_labels=None):
     rgtot=sqrt( samples[:,0]**2 + samples[:,1]**2 )
 
     plt = _plot_single(gtot, rgtot)
-    plt.xlabel = r'$|\eta|$'
+    if dolog:
+        plt.xlabel = r'$|\eta|$'
+    else:
+        plt.xlabel = r'$|g|$'
     tab[0,0] = plt
 
     for dim in xrange(ndim):
