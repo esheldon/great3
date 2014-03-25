@@ -5,7 +5,7 @@ from __future__ import print_function
 
 import os
 import numpy
-from numpy import log10, sqrt, zeros
+from numpy import log10, sqrt, ones, zeros, exp, array, diag, where
 
 from . import files
 
@@ -14,8 +14,7 @@ N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 
 
-def fit_joint_run(run, model, do_subfields=False, **keys):
-    import fitsio
+def read_field_list(run, model):
     conf=files.read_config(run)
 
     pars_name='%s_pars' % model
@@ -28,15 +27,14 @@ def fit_joint_run(run, model, do_subfields=False, **keys):
         pars=data[pars_name][:,2:]
         field_list.append(pars)
 
-        if do_subfields:
-            fits_name=files.get_prior_file(ext='fits', **conf)
-            eps_name=files.get_prior_file(ext='eps', **conf)
-            fit_joint([pars],
-                      fname=fits_name,
-                      eps=eps_name,
-                      **keys)
+    return field_list
 
-    del conf['subid']
+def fit_joint_run(run, model, **keys):
+    import fitsio
+    conf=files.read_config(run)
+
+    field_list=read_field_list(run, model)
+
 
     dolog=keys.get('dolog',True)
     if dolog:
@@ -79,38 +77,45 @@ def fit_joint(field_list,
         usepars = make_logpars_and_subtract_mean_shape(field_list)
     else:
         print("using linear pars")
-        usepars=make_combined_pars(field_list)
+        usepars=make_combined_pars_subtract_mean_shape(field_list)
 
+        # usepars are [gtot,T,Flux1,Flux2,...]
         T_max=keys.get('T_max',1.5)
         Flux_max=keys.get('Flux_max',10.0)
-        Ftot=usepars[:,3:].sum(axis=1)
-        w,=numpy.where( (usepars[:,2] < T_max) & (Ftot < Flux_max) )
+        T=usepars[:,1]
+        Ftot=usepars[:,2:].sum(axis=1)
+        w,=numpy.where( (T < T_max) & (Ftot < Flux_max) )
         print("keeping %s/%s" % (w.size,usepars.shape[0]))
         usepars=usepars[w,:]
 
     ndim = usepars.shape[1]
-    assert (ndim==4 or ndim==5),"ndim should be 4 or 5"
+    assert (ndim==3 or ndim==4),"ndim should be 3 or 4"
 
     if dolog:
         par_labels=_par_labels_log[ndim]
     else:
         par_labels=_par_labels_lin[ndim]
 
-    gmm=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
+    gmm0=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
+
 
     output=zeros(ngauss, dtype=[('means','f8',ndim),
                                 ('covars','f8',(ndim,ndim)),
                                 ('icovars','f8',(ndim,ndim)),
                                 ('weights','f8'),
                                 ('norm','f8')])
-    output['means']=gmm.means_
-    output['covars']=gmm.covars_
-    output['weights']=gmm.weights_
+    output['means']=gmm0.means_
+    output['covars']=gmm0.covars_
+    output['weights']=gmm0.weights_
 
     for i in xrange(ngauss):
         output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
 
-    plot_fits(usepars, gmm, eps=eps, par_labels=par_labels, show=show,
+    # make sure our constructore works
+    gmm_plot=make_joint_gmm(gmm0.weights_, gmm0.means_, gmm0.covars_)
+
+    samples=gmm_plot.sample(usepars.shape[0]*100)
+    plot_fits(usepars, samples, eps=eps, par_labels=par_labels, show=show,
               dolog=dolog)
 
     if fname is not None:
@@ -139,22 +144,19 @@ def make_joint_gmm(weights, means, covars):
     return gmm
 
 _par_labels_log={}
-_par_labels_log[4] = [r'$\eta_1$',
-                      r'$\eta_2$',
+_par_labels_log[3] = [r'$|\eta|$',
                       r'$log_{10}(T)$',
                       r'$log_{10}(F)$']
-_par_labels_log[5] = [r'$\eta_1$',
-                      r'$\eta_2$',
+_par_labels_log[4] = [r'$|\eta|$',
                       r'$log_{10}(T)$',
                       r'$log_{10}(F_b)$',
                       r'$log_{10}(F_d)$']
 
 _par_labels_lin={}
-_par_labels_lin[4] = [r'$g_1$',
-                      r'$g_2$',
+_par_labels_lin[3] = [r'$|g|$',
                       r'$T$',
                       r'$F$']
-_par_labels_lin[5] = [r'$g_1$',
+_par_labels_lin[4] = [r'$|g|$',
                       r'$g_2$',
                       r'$T$',
                       r'$F_b$',
@@ -162,21 +164,27 @@ _par_labels_lin[5] = [r'$g_1$',
 
 
 
-def make_combined_pars(field_list):
+def make_combined_pars_subtract_mean_shape(field_list):
     """
     just make the combined pars
     """
     import lensing
 
     ndim = field_list[0].shape[1]
+    ndim_keep=ndim-1
 
     nobj=0
     for f in field_list:
         nobj += f.shape[0]
 
+
+
     print("nobj:",nobj)
     print("ndim:",ndim)
-    pars = zeros( (nobj, ndim) )
+    print("ndim_keep:",ndim_keep)
+
+    # make pars with mag of ellipticity parameter
+    pars = zeros( (nobj, ndim_keep) )
 
     start=0
     for f in field_list:
@@ -186,7 +194,12 @@ def make_combined_pars(field_list):
 
         print(start,end)
 
-        pars[start:end, :] = f[:,:]
+        f[:,0] -= f[:,0].mean()
+        f[:,1] -= f[:,1].mean()
+
+        ecomb = sqrt( f[:,0]**2 + f[:,1]**2 )
+        pars[start:end, 0] = ecomb
+        pars[start:end, 1:] = f[:,2:]
 
         start += nf
 
@@ -202,6 +215,7 @@ def make_logpars_and_subtract_mean_shape(field_list):
     import lensing
 
     ndim = field_list[0].shape[1]
+    ndim_keep=ndim-1
 
     nobj=0
     for f in field_list:
@@ -209,7 +223,9 @@ def make_logpars_and_subtract_mean_shape(field_list):
 
     print("nobj:",nobj)
     print("ndim:",ndim)
-    logpars = zeros( (nobj, ndim) )
+    print("ndim_keep:",ndim_keep)
+
+    logpars = zeros( (nobj, ndim_keep) )
 
     start=0
     for f in field_list:
@@ -226,13 +242,11 @@ def make_logpars_and_subtract_mean_shape(field_list):
         g2 -= g2.mean()
 
         eta1, eta2 = lensing.util.g1g2_to_eta1eta2(g1,g2)
+        eta=sqrt(eta1**2 + eta2**2)
 
-        logpars[start:end, 0] = eta1
-        logpars[start:end, 1] = eta2
-
-        logpars[start:end, 2] = log10( f[:,2] )
-
-        logpars[start:end, 3:] = log10( f[:,3:] )
+        logpars[start:end, 0] = eta
+        logpars[start:end, 1] = log10( f[:,2] )
+        logpars[start:end, 2:] = log10( f[:,3:] )
 
         start += nf
 
@@ -241,8 +255,8 @@ def make_logpars_and_subtract_mean_shape(field_list):
 
 def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     """
-    For g1,g2,T,flux send logarithic versions:
-        eta1, eta2, log10(T), log10(flux)
+        gtot, T, flux
+        etatot, log10(T), log10(flux)
     
     data is shape
         [npoints, ndim]
@@ -262,7 +276,7 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
     return gmm
 
 
-def plot_fits(pars, gmm, dolog=True, show=False, eps=None, par_labels=None):
+def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
     """
     """
     import esutil as eu
@@ -275,21 +289,10 @@ def plot_fits(pars, gmm, dolog=True, show=False, eps=None, par_labels=None):
     num=pars.shape[0]
     ndim=pars.shape[1]
 
-    samples=gmm.sample(num*100)
-
-    nrow,ncol = images.get_grid(ndim+1) 
+    nrow,ncol = images.get_grid(ndim) 
 
     tab=biggles.Table(nrow,ncol)
 
-    gtot=sqrt( pars[:,0]**2 + pars[:,1]**2 )
-    rgtot=sqrt( samples[:,0]**2 + samples[:,1]**2 )
-
-    plt = _plot_single(gtot, rgtot)
-    if dolog:
-        plt.xlabel = r'$|\eta|$'
-    else:
-        plt.xlabel = r'$|g|$'
-    tab[0,0] = plt
 
     for dim in xrange(ndim):
         plt = _plot_single(pars[:,dim], samples[:,dim])
@@ -298,8 +301,8 @@ def plot_fits(pars, gmm, dolog=True, show=False, eps=None, par_labels=None):
         else:
             plt.xlabel=r'$P_%s$' % dim
 
-        row=(dim+1)/ncol
-        col=(dim+1) % ncol
+        row=(dim)/ncol
+        col=(dim) % ncol
 
         tab[row,col] = plt
 
@@ -360,7 +363,232 @@ def get_norm_hist(data, min=None, max=None, binsize=1):
 
     hdict = eu.stat.histogram(data, min=min, max=max, binsize=binsize, more=True)
 
-    hist_norm = hdict['hist']/float(hdict['hist'].sum())
+    hsum=float(hdict['hist'].sum())
+
+    hist_norm = hdict['hist']/hsum
+    hist_norm_err = sqrt(hdict['hist'])/hsum
+
     hdict['hist_norm'] = hist_norm
+    hdict['hist_norm_err'] = hist_norm_err
 
     return hdict
+
+
+def fit_g_prior(run, model):
+    """
+    Fit only the g prior
+    """
+    import esutil as eu
+    import biggles
+    import mcmc
+
+    fl=read_field_list(run, model)
+    comb=make_combined_pars_subtract_mean_shape(fl)
+
+    g=comb[:,0]
+
+    binsize=0.01
+
+    hdict=get_norm_hist(g, min=0, binsize=binsize)
+
+    plt=eu.plotting.bscatter(hdict['center'],
+                             hdict['hist_norm'],
+                             yerr=hdict['hist_norm_err'],
+                             show=False)
+
+    ivar = ones(hdict['center'].size)
+    w,=where(hdict['hist_norm_err'] > 0.0)
+    if w.size > 0:
+        ivar[w] = 1.0/hdict['hist_norm_err']**2
+
+    gpfitter=GPriorFitter(hdict['center'],
+                          hdict['hist_norm'],
+                          ivar)
+
+    gpfitter.do_fit()
+    gpfitter.print_result()
+    res=gpfitter.get_result()
+
+    gvals=numpy.linspace(0.0, 1.0)
+    model=gpfitter.get_model_val(res['pars'], g=gvals)
+    crv=biggles.Curve(gvals, model, color='red')
+    plt.add(crv)
+
+    mcmc.plot_results(gpfitter.trials)
+    plt.show()
+
+class GPriorFitter:
+    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000):
+        """
+        Fit with gmax free
+        Input is the histogram data
+        """
+        self.xvals=xvals
+        self.yvals=yvals
+        self.ivar=ivar
+
+        self.nwalkers=nwalkers
+        self.burnin=burnin
+        self.nstep=nstep
+
+        #self.npars=6
+        self.npars=3
+        self.gmax=1.0
+
+    def get_result(self):
+        return self.result
+
+    def do_fit(self):
+        import emcee
+
+        print("getting guess")
+        guess=self.get_guess()
+        sampler = emcee.EnsembleSampler(self.nwalkers, 
+                                        self.npars,
+                                        self.get_lnprob,
+                                        a=2)
+
+
+        print("burnin:",self.burnin)
+        pos, prob, state = sampler.run_mcmc(guess, self.burnin)
+        sampler.reset()
+        print("steps:",self.nstep)
+        pos, prob, state = sampler.run_mcmc(pos, self.nstep)
+
+        self.trials  = sampler.flatchain
+
+        self._calc_result()
+
+    def _calc_result(self):
+        import mcmc
+        pars,pcov=mcmc.extract_stats(self.trials)
+
+        d=diag(pcov)
+        perr = sqrt(d)
+
+        self.result={'A':pars[0],
+                     'A_err':perr[0],
+                     'a':pars[1],
+                     'a_err':perr[1],
+                     'g0':pars[2],
+                     'g0_err':perr[2],
+                     #'s':pars[4],
+                     #'s_err':perr[4],
+                     #'r':pars[5],
+                     #'r_err':perr[5],
+                     'pars':pars,
+                     'pcov':pcov,
+                     'perr':perr}
+
+    def print_result(self):
+
+        fmt="""    A:    %(A).6g +/- %(A_err).6g
+    a:    %(a).6g +/- %(a_err).6g
+    g0:   %(g0).6g +/- %(g0_err).6g
+    gmax: %(gmax).6g +/- %(gmax_err).6g
+    s:    %(s).6g +/- %(s_err).6g
+    r:    %(r).6g +/- %(r_err).6g\n"""
+        fmt="""    A:    %(A).6g +/- %(A_err).6g
+    a:    %(a).6g +/- %(a_err).6g
+    g0:   %(g0).6g +/- %(g0_err).6g\n"""
+
+        print( fmt % self.result )
+
+
+    def get_guess(self):
+        xstep=self.xvals[1]-self.xvals[0]
+
+        self.Aguess = self.yvals.sum()*xstep
+        aguess=1.11
+        g0guess=0.052
+        #s_guess=2.0
+        #r_guess=1.0
+
+        pcen=array( [self.Aguess, aguess, g0guess])
+        print("pcen:",pcen)
+
+        guess=zeros( (self.nwalkers,self.npars) )
+        width=0.1
+
+        nwalkers=self.nwalkers
+        guess[:,0] = pcen[0]*(1.+width*srandu(nwalkers))
+        guess[:,1] = pcen[1]*(1.+width*srandu(nwalkers))
+        guess[:,2] = pcen[2]*(1.+width*srandu(nwalkers))
+        #guess[:,3] = pcen[3]*(1.+width*srandu(nwalkers))
+        #guess[:,4] = pcen[4]*(1.+width*srandu(nwalkers))
+        #guess[:,5] = pcen[5]*(1.+width*srandu(nwalkers))
+
+        return guess
+
+
+    def get_lnprob(self, pars):
+        w,=where(pars < 0)
+        if w.size > 0:
+            return -9.999e20
+
+        A=pars[0]
+        a=pars[1]
+        g0=pars[2]
+
+        if a > 1000:
+            return -9.999e20
+
+        model=self.get_model_val(pars)
+
+        chi2 = (model - self.yvals)**2
+        chi2 *= self.ivar
+        lnprob = -0.5*chi2.sum()
+
+        ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
+
+        lnprob += ap
+
+        return lnprob
+
+
+    def get_model_val(self, pars, g=None):
+        from numpy import pi
+
+
+        A=pars[0]
+        a=pars[1]
+        g0=pars[2]
+        gmax=self.gmax
+
+        if g is None:
+            g=self.xvals
+
+        model=zeros(g.size)
+
+        gsq = g**2
+
+        w,=where(gsq < 1.0)
+        if w.size > 0:
+            omgsq=1.0-gsq[w]
+            omgsq_sq = omgsq[w]*omgsq[w]
+
+            gw=g[w]
+            numer = 2*pi*gw*A*(1-exp( (gw-gmax)/a )) * omgsq_sq
+            denom = (1+gw)*sqrt(gw**2 + g0**2)
+
+            model[w]=numer/denom
+
+
+        """
+        w,=where(g < gmax)
+        if w.size > 0:
+            gw=g[w]
+            numer = 2*pi*gw*A*(1-exp( (gw-gmax)/a )) * omgsq_sq[w]
+            denom = (1+gw)*sqrt(gw**2 + g0**2)
+
+            model[w]=numer/denom
+        """
+        return model
+
+
+def srandu(num=None):
+    """
+    Generate random numbers in the symmetric distribution [-1,1]
+    """
+    return 2*(numpy.random.random(num)-0.5)
+

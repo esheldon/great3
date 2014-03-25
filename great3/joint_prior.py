@@ -1,3 +1,4 @@
+from __future__ import print_function
 from . import files
 from numpy import array
 
@@ -29,9 +30,17 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
                            partype="linpars",
                            ext="fits")
 
+        T_bounds=[0.01,1.5]
+        Flux_bounds=[0.01,10.0]
+        #T_bounds=[0.15,0.6]
+        #Flux_bounds=[0.75,4.0]
+        print("T bounds:",T_bounds)
+        print("Flux bounds:",Flux_bounds)
         p=JointPriorSimpleLinPars(t['weights'],
                                   t['means'],
-                                  t['covars'])
+                                  t['covars'],
+                                  T_bounds,
+                                  Flux_bounds)
 
     else:
         raise ValueError("bad type: '%s'" % type)
@@ -324,3 +333,48 @@ _great3_bdf_covars = array([[[  2.55297986e-01,  -2.49852700e-02,  -1.48801262e-
           -4.74133580e-02,   4.35961754e-02]]])
 
 
+
+class Tester(object):
+    def __init__(self, jp):
+        self.jp=jp
+    def get_lnprob(self, pars):
+        return self.jp.get_lnprob_scalar1d(pars, throw=False)
+
+def test_random(nrand=40000, type="great3-real_galaxy-ground-constant-exp-logpars"):
+    """
+    Make sure our lnprob function properly matches the samples
+    drawn from the mixture
+    """
+    import great3
+    import emcee
+
+    jp=make_joint_prior_simple(type=type)
+    tester=Tester(jp)
+
+    print("getting random samples")
+    rsamp=jp.sample1d(nrand)
+
+    print("getting mcmc samples")
+    nwalkers=80
+    npars=rsamp.shape[1]
+    burnin=800
+    nstep=10000
+    sampler = emcee.EnsembleSampler(nwalkers, 
+                                    npars, 
+                                    tester.get_lnprob)
+
+    guess=rsamp[0:nwalkers,:]
+    print("burnin per walker",burnin)
+    pos, prob, state = sampler.run_mcmc(guess, burnin)
+    sampler.reset()
+    print("steps per walker",nstep)
+    pos, prob, state = sampler.run_mcmc(pos, nstep)
+
+
+    mcmc_rsamp = sampler.flatchain
+
+    if 'log' in type:
+        dolog=True
+    else:
+        dolog=False
+    great3.fit_prior.plot_fits(rsamp, mcmc_rsamp, dolog=dolog, show=True)
