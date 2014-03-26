@@ -320,18 +320,18 @@ class NGMixFitter(FitterBase):
 
         # first the structural fit
         sigma_guess = sqrt( self.res['psf_gmix'].get_T()/2.0 )
-        print('    sigma guess:',sigma_guess)
+        print('      sigma guess:',sigma_guess)
         fitter=self._fit_em_1gauss(self.gal_image,
                                    self.gal_cen_guess,
                                    sigma_guess)
 
         em_gmix = fitter.get_gmix()
-        print("    em gmix:",em_gmix)
+        print("      em gmix:",em_gmix)
 
         row_rel, col_rel = em_gmix.get_cen()
         em_cen = self.gal_cen_guess + array([row_rel,col_rel])
 
-        print("    em gauss cen:",em_cen)
+        print("      em gauss cen:",em_cen)
 
         jacob=self._get_jacobian(em_cen)
 
@@ -424,6 +424,8 @@ class NGMixFitter(FitterBase):
 
                                         full_guess=full_guess,
 
+                                        shear_expand=self.shear_expand,
+
                                         cen_prior=cen_prior,
                                         T_prior=T_prior,
                                         counts_prior=counts_prior,
@@ -448,28 +450,45 @@ class NGMixFitter(FitterBase):
         res=self.res
         conf=self.conf
 
-        full_guess=self._get_guess_simple_joint()
 
-        fitter=MCMCSimpleJointHybrid(self.gal_image,
-                                     self.weight_image,
-                                     res['jacob'],
-                                     model,
-                                     psf=res['psf_gmix'],
+        ntry=conf['mcmc_ntry']
+        for i in xrange(ntry):
 
-                                     nwalkers=conf['nwalkers'],
-                                     burnin=conf['burnin'],
-                                     nstep=conf['nstep'],
-                                     mca_a=conf['mca_a'],
+            full_guess=self._get_guess_simple_joint()
 
-                                     full_guess=full_guess,
-                                     cen_prior=cen_prior,
-                                     joint_prior=self.joint_prior,
+            fitter=MCMCSimpleJointHybrid(self.gal_image,
+                                         self.weight_image,
+                                         res['jacob'],
+                                         model,
+                                         psf=res['psf_gmix'],
 
-                                     do_pqr=conf['do_pqr'])
-        fitter.go()
+                                         nwalkers=conf['nwalkers'],
+                                         burnin=conf['burnin'],
+                                         nstep=conf['nstep'],
+                                         mca_a=conf['mca_a'],
+
+                                         full_guess=full_guess,
+                                         shear_expand=self.shear_expand,
+
+                                         cen_prior=cen_prior,
+                                         joint_prior=self.joint_prior,
+
+                                         do_pqr=conf['do_pqr'])
+            fitter.go()
+
+            # guard against rare mcmc problems
+            tres=fitter.get_result()
+            if (tres['pars'] is not None
+                    and tres['flags'] == 0
+                    and abs(tres['pars'][2]) <1 ):
+                break
+            else:
+                print("          bad mcmc result:")
+                pprint(tres)
+                print("          trying again")
 
         self.res[model] = {'fitter':fitter,
-                           'res':fitter.get_result()}
+                           'res':tres}
 
 
     def _get_guess_simple(self,
@@ -578,6 +597,8 @@ class NGMixFitter(FitterBase):
 
                                      full_guess=full_guess,
 
+                                     shear_expand=self.shear_expand,
+
                                      cen_prior=cen_prior,
                                      T_prior=T_prior,
                                      counts_prior=counts_prior,
@@ -660,6 +681,8 @@ class NGMixFitter(FitterBase):
                             mca_a=conf['mca_a'],
 
                             Tfracdiff_max=conf['Tfracdiff_max'],
+
+                            shear_expand=self.shear_expand,
 
                             full_guess=full_guess,
 
@@ -801,6 +824,7 @@ class NGMixFitter(FitterBase):
         if self.make_plots:
             print("will make plots!")
 
+        self.shear_expand=conf.get('shear_expand')
         self._unpack_priors()
 
     def _get_jacobian(self, cen):
@@ -867,6 +891,7 @@ class NGMixFitter(FitterBase):
         data=self.data
         conf=self.conf
 
+        # overall flags, model flags copied below
         data['flags'][sub_index] = res['flags']
 
         if 'psf_gmix' in res:
@@ -907,9 +932,11 @@ class NGMixFitter(FitterBase):
         self.data[n['g_cov']][sub_index,:,:] = res['g_cov']
 
         self.data[n['arate']][sub_index] = res['arate']
+        self.data[n['tau']][sub_index] = res['tau']
 
         for sn in _stat_names:
-            self.data[n[sn]][sub_index] = res[sn]
+            if sn in res:
+                self.data[n[sn]][sub_index] = res[sn]
 
         if conf['do_pqr']:
             self.data[n['P']][sub_index] = res['P']
@@ -965,6 +992,7 @@ class NGMixFitter(FitterBase):
                  (n['aic'],'f8'),
                  (n['bic'],'f8'),
                  (n['arate'],'f8'),
+                 (n['tau'],'f8'),
                 ]
 
             if conf['do_pqr']:
@@ -996,6 +1024,8 @@ class NGMixFitter(FitterBase):
             data[n['chi2per']] = PDEFVAL
             data[n['aic']] = BIG_PDEFVAL
             data[n['bic']] = BIG_PDEFVAL
+
+            data[n['tau']] = BIG_PDEFVAL
 
             if conf['do_pqr']:
                 data[n['P']] = DEFVAL
@@ -1159,7 +1189,8 @@ def get_model_names(model):
            'Q',
            'R',
            'tries',
-           'arate']
+           'arate',
+           'tau']
 
     names += _stat_names
 

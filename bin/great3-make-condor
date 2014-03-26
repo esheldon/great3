@@ -36,7 +36,7 @@ Executable      = {master_script}
 
 # Estimate of init. image size.  This is actually high
 # condor always raises it to 60-90 Meg
-Image_Size      = 730000
+Image_Size      = 950000
 
 # we need this or nothing works
 GetEnv = True

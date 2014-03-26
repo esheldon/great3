@@ -7,12 +7,35 @@ from __future__ import print_function
 import sys
 import yaml
 import numpy
+from numpy import where, isfinite, sqrt
 
 import great3
 from great3 import files
 
 from optparse import OptionParser
 parser=OptionParser(__doc__)
+
+def get_finite_logic(data, model):
+    """
+    isfinite checks for both nan and inf
+    """
+    Pname='%s_P' % model
+    Qname='%s_Q' % model
+    Rname='%s_R' % model
+
+    P=data[Pname]
+    Q=data[Qname]
+    R=data[Rname]
+
+    logic=(  isfinite(P)
+           & isfinite(Q[:,0])
+           & isfinite(Q[:,1])
+           & isfinite(R[:,0,0])
+           & isfinite(R[:,0,1])
+           & isfinite(R[:,1,0])
+           & isfinite(R[:,1,1]) )
+
+    return logic
 
 def do_calc_mean_shear(conf, cuts, subid):
     """
@@ -22,22 +45,43 @@ def do_calc_mean_shear(conf, cuts, subid):
     conf['subid']=subid
     data=files.read_output(**conf)
 
-    if 'rg' in conf['run']:
-        res=great3.rg.select_and_calc_shear(data, **cuts)
-    elif 'nfit' in conf['run']:
+    if 'nfit' in conf['run']:
         model=conf['fit_models'][0]
 
-        # there was some bug with flags, just check main flags
-        if conf['run']=='nfit-01':
-            w,=numpy.where(data['flags']==0)
-        else:
-            flagname='%s_flags' % model
-            w,=numpy.where(data[flagname] == cuts['flagval'])
+        model_flagname='%s_flags' % model
 
+        flagval=cuts['flagval']
+
+        logic = data['flags'] == flagval
+
+        w,=where(logic)
         if w.size != data.size:
-            print("found %d/%d with %s==0" % (w.size,data.size,flagname))
-            data=data[w]
+            print("found %d/%d with flags==0" % (w.size,data.size))
+
+        model_flag_logic = (data[model_flagname]==0)
+        w,=where(model_flag_logic)
+        if w.size != data.size:
+            print("found %d/%d with %s==0" % (w.size,data.size,model_flagname))
+
+        logic = logic & model_flag_logic
+
+        if cuts['check_finite']:
+            finite_logic = get_finite_logic(data, model)
+            w,=where(finite_logic)
+            if w.size != data.size:
+                print("found %d/%d finite P,Q,R" % (w.size,data.size))
+
+            logic = logic & finite_logic
+
+        w,=where(logic)
+        if w.size != data.size:
+            print("kept %d/%d" % (w.size,data.size))
+
+        data=data[w]
+
         res=great3.nfit.get_shear(data, model)
+    elif 'rg' in conf['run']:
+        res=great3.rg.select_and_calc_shear(data, **cuts)
     else:
         raise ValueError("unsupported run type: '%s'" % conf['run'])
 
@@ -72,6 +116,10 @@ def main():
             res=do_calc_mean_shear(conf, cuts, subid)
             out=(subid, res['shear'][0], res['shear'][1])
             fobj.write('%d %.16g %.16g\n' % out)
+
+            out2=(subid, res['shear'][0], sqrt(res['shear_cov'][0,0]),
+                  res['shear'][1], sqrt(res['shear_cov'][1,1]) )
+            print('%d %g +/- %g  %g +/- %g' % out2)
 
     print("output in:",outname)
 

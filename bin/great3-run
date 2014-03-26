@@ -8,6 +8,7 @@ import sys
 import os
 import yaml
 import fitsio
+from numpy import zeros, where
 
 import great3
 from great3 import files
@@ -19,7 +20,6 @@ parser.add_option('--obj-range',default=None,
                   help="obj range as csv")
 parser.add_option('--make-plots',action='store_true',
                   help="make some plots")
-
 
 def get_checkpoint_data(output_file):
     """
@@ -66,6 +66,26 @@ def run(conf):
     data=fitter.get_data()
     return data
 
+def get_shear_expand(conf):
+    shear_expand_run = conf.get('shear_expand_run',None)
+    if shear_expand_run is None:
+        shear_expand=zeros(2)
+    else:
+        cc={}
+        cc.update(conf)
+
+        cc['run'] = shear_expand_run
+        cc['cut'] = cc['shear_expand_cut']
+        shear_data=files.read_shear(**cc)
+
+        w,=where(shear_data['subid'] == cc['subid'])
+        shear_expand = shear_data['shear'][w[0],:]
+
+
+    print("using shear expand run:",shear_expand_run)
+    print("using shear expand:",shear_expand)
+    return shear_expand
+
 def main():
     options,args = parser.parse_args(sys.argv[1:])
 
@@ -88,6 +108,8 @@ def main():
             get_checkpoint_data(conf['output_file'])
 
     conf['make_plots'] = options.make_plots
+
+    conf['shear_expand'] = get_shear_expand(conf)
 
     data=run(conf)
 
