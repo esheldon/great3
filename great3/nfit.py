@@ -1,6 +1,6 @@
 from __future__ import print_function
 import numpy
-from numpy import sqrt, array, zeros
+from numpy import sqrt, array, zeros, log10
 from numpy.random import random as randu
 from pprint import pprint
 
@@ -60,10 +60,12 @@ class NGMixFitter(FitterBase):
         Fit the psf image
         """
         
+        self.fitting_galaxy=False
+
         # if not using a random psf, just do the fit once
         if not self.conf['use_random_psf']:
             if hasattr(self,'psf_gmix'):
-                print("re-using psf fit")
+                print("    re-using psf fit")
                 self.res['psf_gmix']=self.psf_gmix
                 return
 
@@ -135,9 +137,10 @@ class NGMixFitter(FitterBase):
         im_with_sky, sky = ngmix.em.prep_image(im)
         jacob = self._get_jacobian(cen)
 
-        ntry = conf['em_ntry']
+        ntry,maxiter,tol = self._get_em_pars()
         for i in xrange(ntry):
             guess = self._get_em_guess(sigma_guess, ngauss)
+            print("    guess:",guess)
             try:
                 fitter=self._do_fit_em_with_full_guess(im_with_sky,
                                                        sky,
@@ -156,8 +159,7 @@ class NGMixFitter(FitterBase):
                                    jacob):
         import ngmix
 
-        maxiter=self.conf['em_maxiter']
-        tol=self.conf['em_tol']
+        ntry,maxiter,tol = self._get_em_pars()
 
         fitter=ngmix.em.GMixEM(image, jacobian=jacob)
         fitter.go(guess, sky, maxiter=maxiter, tol=tol)
@@ -181,12 +183,12 @@ class NGMixFitter(FitterBase):
         import ngmix
 
         sigma2 = sigma**2
-        pars=array( [1.0 + 0.01*srandu(),
-                     0.1*srandu(),
-                     0.1*srandu(), 
-                     sigma2*(1.0 + 0.1*srandu()),
-                     0.01*srandu(),
-                     sigma2*(1.0 + 0.1*srandu())] )
+        pars=array( [1.0 + 0.1*srandu(),
+                     0.2*srandu(),
+                     0.2*srandu(), 
+                     sigma2*(1.0 + 0.5*srandu()),
+                     0.2*sigma2*srandu(),
+                     sigma2*(1.0 + 0.5*srandu())] )
 
         return ngmix.gmix.GMix(pars=pars)
 
@@ -211,6 +213,13 @@ class NGMixFitter(FitterBase):
 
 
         return ngmix.gmix.GMix(pars=pars)
+
+    def _get_em_pars(self):
+        conf=self.conf
+        if self.fitting_galaxy:
+            return conf['gal_em_ntry'], conf['gal_em_maxiter'], conf['gal_em_tol']
+        else:
+            return conf['gal_em_ntry'], conf['gal_em_maxiter'], conf['gal_em_tol']
 
     def _compare_psf(self, fitter):
         """
@@ -292,6 +301,8 @@ class NGMixFitter(FitterBase):
         Then fit the galaxy models.
         """
 
+        self.fitting_galaxy=True
+
         print('    fitting gal em 1gauss')
 
         self._fit_galaxy_em()
@@ -304,14 +315,18 @@ class NGMixFitter(FitterBase):
         flux out of that, but we can get flux using the _fit_flux routine
 
         """
+        #import images
+        #images.multiview(self.gal_image)
 
         # first the structural fit
         sigma_guess = sqrt( self.res['psf_gmix'].get_T()/2.0 )
+        print('    sigma guess:',sigma_guess)
         fitter=self._fit_em_1gauss(self.gal_image,
                                    self.gal_cen_guess,
                                    sigma_guess)
 
         em_gmix = fitter.get_gmix()
+        print("    em gmix:",em_gmix)
 
         row_rel, col_rel = em_gmix.get_cen()
         em_cen = self.gal_cen_guess + array([row_rel,col_rel])
@@ -381,6 +396,10 @@ class NGMixFitter(FitterBase):
         """
         import ngmix
 
+        if self.joint_prior is not None:
+            return self._fit_simple_joint(model)
+
+
         priors=self.priors[model]
         g_prior=priors['g']
         T_prior=priors['T']
@@ -416,6 +435,42 @@ class NGMixFitter(FitterBase):
                            'res':fitter.get_result()}
 
 
+    def _fit_simple_joint(self, model):
+        """
+        Fit the simple model, taking guesses from our
+        previous em fits
+        """
+        import ngmix
+        from ngmix.fitting import MCMCSimpleJointHybrid
+
+        cen_prior=self.cen_prior
+
+        res=self.res
+        conf=self.conf
+
+        full_guess=self._get_guess_simple_joint()
+
+        fitter=MCMCSimpleJointHybrid(self.gal_image,
+                                     self.weight_image,
+                                     res['jacob'],
+                                     model,
+                                     psf=res['psf_gmix'],
+
+                                     nwalkers=conf['nwalkers'],
+                                     burnin=conf['burnin'],
+                                     nstep=conf['nstep'],
+                                     mca_a=conf['mca_a'],
+
+                                     full_guess=full_guess,
+                                     cen_prior=cen_prior,
+                                     joint_prior=self.joint_prior,
+
+                                     do_pqr=conf['do_pqr'])
+        fitter.go()
+
+        self.res[model] = {'fitter':fitter,
+                           'res':fitter.get_result()}
+
 
     def _get_guess_simple(self,
                           widths=[0.01, 0.01, 0.01, 0.01, 0.01, 0.01]):
@@ -448,6 +503,44 @@ class NGMixFitter(FitterBase):
         guess[:,5] = get_positive_guess(flux,nwalkers,width=widths[5])
 
         return guess
+
+
+    def _get_guess_simple_joint(self):
+        """
+        Get a guess centered on the truth
+
+        width is relative for T and counts
+        """
+
+        width = 0.01
+
+        nwalkers = self.conf['nwalkers']
+
+        res=self.res
+        gmix = res['em_gmix']
+        g1,g2,T = gmix.get_g1g2T()
+        F = res['em_gauss_flux']
+
+
+        guess=numpy.zeros( (nwalkers, 6) )
+
+        guess[:,0] = width*srandu(nwalkers)
+        guess[:,1] = width*srandu(nwalkers)
+
+        guess_shape=get_shape_guess(g1,g2,nwalkers,width=width)
+        guess[:,2]=guess_shape[:,0]
+        guess[:,3]=guess_shape[:,1]
+
+        guess[:,4] = log10( get_positive_guess(T,nwalkers,width=width) )
+
+        # got anything better?
+        guess[:,5] = log10( get_positive_guess(F,nwalkers,width=width) )
+
+        return guess
+
+
+
+
 
     def _fit_bdf(self):
         """
@@ -802,6 +895,8 @@ class NGMixFitter(FitterBase):
         flux=pars[5:].sum()
         flux_err=sqrt( pars_cov[5:, 5:].sum() )
 
+        self.data[n['flags']][sub_index] = res['flags']
+
         self.data[n['pars']][sub_index,:] = pars
         self.data[n['pars_cov']][sub_index,:,:] = pars_cov
 
@@ -929,8 +1024,10 @@ def get_joint_prior(conf):
     jptype = conf.get('joint_prior_type',None)
     if jptype==None:
         jp=None
-    else:
+    elif 'bdf' in jptype:
         jp=joint_prior.make_joint_prior_bdf(type=jptype)
+    else:
+        jp = joint_prior.make_joint_prior_simple(type=jptype)
 
     return jp
 

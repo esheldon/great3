@@ -7,8 +7,24 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
     Make a joint prior 
     """
 
-    if type == "great3-real_galaxy-ground-constant-exp-logpars":
-        import great3
+    if type == "great3-real_galaxy-ground-constant-exp-hybrid":
+        # pretending we can separate out the shape prior
+        import ngmix
+        from ngmix.joint_prior import JointPriorSimpleHybrid
+        t=files.read_prior(experiment="real_galaxy",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-rgc-deep01",
+                           partype="hybrid",
+                           ext="fits")
+
+        g_prior = ngmix.priors.make_gprior_great3_exp()
+        p=JointPriorSimpleHybrid(t['weights'],
+                                 t['means'],
+                                 t['covars'],
+                                 g_prior)
+
+    elif type == "great3-real_galaxy-ground-constant-exp-logpars":
         from ngmix.joint_prior import JointPriorSimpleLogPars
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
@@ -21,7 +37,6 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
                                   t['means'],
                                   t['covars'])
     elif type == "great3-real_galaxy-ground-constant-exp-linpars":
-        import great3
         from ngmix.joint_prior import JointPriorSimpleLinPars
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",

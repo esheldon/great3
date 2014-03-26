@@ -14,7 +14,7 @@ N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 
 
-def read_field_list(run, model):
+def read_field_list(run, model,noshape=False):
     conf=files.read_config(run)
 
     pars_name='%s_pars' % model
@@ -24,7 +24,10 @@ def read_field_list(run, model):
         conf['subid']=subid
         data=files.read_output(**conf)
 
-        pars=data[pars_name][:,2:]
+        if noshape:
+            pars=data[pars_name][:,4:]
+        else:
+            pars=data[pars_name][:,2:]
         field_list.append(pars)
 
     return field_list
@@ -33,33 +36,112 @@ def fit_joint_run(run, model, **keys):
     import fitsio
     conf=files.read_config(run)
 
-    field_list=read_field_list(run, model)
+    noshape=keys.get('noshape',False)
+    field_list=read_field_list(run, model,noshape=noshape)
 
 
     dolog=keys.get('dolog',True)
     if dolog:
-        conf['partype']='logpars'
+        if noshape:
+            conf['partype']='hybrid'
+        else:
+            conf['partype']='logpars'
     else:
         conf['partype']='linpars'
+
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
     print(fits_name)
     print(eps_name)
 
-    fit_joint(field_list,
-              fname=fits_name,
-              eps=eps_name,
-              **keys)
+    if noshape:
+        fit_joint_noshape(field_list,
+                          fname=fits_name,
+                          eps=eps_name,
+                          **keys)
 
-def fit_joint(field_list,
-              ngauss=NGAUSS_DEFAULT,
-              n_iter=N_ITER_DEFAULT,
-              min_covar=MIN_COVAR,
-              show=False,
-              eps=None,
-              fname=None,
-              dolog=True,
-              **keys):
+
+    else:
+        fit_joint_all(field_list,
+                      fname=fits_name,
+                      eps=eps_name,
+                      **keys)
+
+
+def fit_joint_noshape(field_list,
+                      ngauss=NGAUSS_DEFAULT,
+                      n_iter=N_ITER_DEFAULT,
+                      min_covar=MIN_COVAR,
+                      show=False,
+                      eps=None,
+                      fname=None,
+                      dolog=True,
+                      **keys):
+    """
+    pars should be [nobj, ndim]
+
+    for a simple model this would be
+        T,flux
+    for bdf this would be
+        T,flux_b,flux_d
+    """
+
+    print("ngauss:   ",ngauss)
+    print("n_iter:   ",n_iter)
+    print("min_covar:",min_covar)
+    if dolog:
+        print("using log pars")
+        usepars = make_logpars(field_list)
+    else:
+        raise ValueError("no lin pars")
+
+    ndim = usepars.shape[1]
+    assert (ndim==2 or ndim==3),"ndim should be 2 or 3"
+
+    if dolog:
+        par_labels=_par_labels_log[ndim]
+    else:
+        par_labels=_par_labels_lin[ndim]
+
+    gmm0=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
+
+    output=zeros(ngauss, dtype=[('means','f8',ndim),
+                                ('covars','f8',(ndim,ndim)),
+                                ('icovars','f8',(ndim,ndim)),
+                                ('weights','f8'),
+                                ('norm','f8')])
+    output['means']=gmm0.means_
+    output['covars']=gmm0.covars_
+    output['weights']=gmm0.weights_
+
+    for i in xrange(ngauss):
+        output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
+
+    # make sure our constructore works
+    gmm_plot=make_joint_gmm(gmm0.weights_, gmm0.means_, gmm0.covars_)
+
+    samples=gmm_plot.sample(usepars.shape[0]*100)
+    plot_fits(usepars, samples, eps=eps, par_labels=par_labels, show=show,
+              dolog=dolog)
+
+    if fname is not None:
+        import fitsio
+        print('writing:',fname)
+        fitsio.write(fname, output, clobber=True)
+    return output
+
+
+
+
+def fit_joint_all(field_list,
+                  ngauss=NGAUSS_DEFAULT,
+                  n_iter=N_ITER_DEFAULT,
+                  min_covar=MIN_COVAR,
+                  show=False,
+                  eps=None,
+                  fname=None,
+                  dolog=True,
+                  **keys):
     """
     pars should be [nobj, ndim]
 
@@ -144,6 +226,9 @@ def make_joint_gmm(weights, means, covars):
     return gmm
 
 _par_labels_log={}
+_par_labels_log[2] = [r'$log_{10}(T)$',
+                      r'$log_{10}(F)$']
+
 _par_labels_log[3] = [r'$|\eta|$',
                       r'$log_{10}(T)$',
                       r'$log_{10}(F)$']
@@ -153,6 +238,9 @@ _par_labels_log[4] = [r'$|\eta|$',
                       r'$log_{10}(F_d)$']
 
 _par_labels_lin={}
+_par_labels_lin[2] = [r'$T$',
+                      r'$F$']
+
 _par_labels_lin[3] = [r'$|g|$',
                       r'$T$',
                       r'$F$']
@@ -251,6 +339,41 @@ def make_logpars_and_subtract_mean_shape(field_list):
         start += nf
 
     return logpars
+
+def make_logpars(field_list):
+    """
+    Subtract the mean g1,g2 from each field.
+
+    Store pars as eta1,eta2 and log of T and fluxes
+    """
+    import lensing
+
+    ndim = field_list[0].shape[1]
+
+    nobj=0
+    for f in field_list:
+        nobj += f.shape[0]
+
+    print("nobj:",nobj)
+    print("ndim:",ndim)
+
+    logpars = zeros( (nobj, ndim) )
+
+    start=0
+    for f in field_list:
+
+        nf = f.shape[0]
+        end = start + nf
+
+        print(start,end)
+
+        logpars[start:end, 0] = log10( f[:,0] )
+        logpars[start:end, 1:] = log10( f[:,1:] )
+
+        start += nf
+
+    return logpars
+
 
 
 def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
