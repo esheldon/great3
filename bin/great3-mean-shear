@@ -37,6 +37,46 @@ def get_finite_logic(data, model):
 
     return logic
 
+def get_shear_expand(conf):
+    shear_expand_run = conf.get('shear_expand_run',None)
+    if shear_expand_run is None:
+        shear_expand=zeros(2)
+    else:
+        shear_expand = files.read_shear_expand(**conf)
+
+        print("using shear expand run:",shear_expand_run)
+    return shear_expand
+
+
+def do_nfit_select(data, conf, cuts):
+    model_flagname='%s_flags' % model
+
+    logic = data['flags'] == 0
+
+    w,=where(logic)
+    if w.size != data.size:
+        print("found %d/%d with flags==0" % (w.size,data.size))
+
+    model_flag_logic = (data[model_flagname]==0)
+    w,=where(model_flag_logic)
+    if w.size != data.size:
+        print("found %d/%d with %s==0" % (w.size,data.size,model_flagname))
+
+    logic = logic & model_flag_logic
+
+    if cuts['check_finite']:
+        finite_logic = get_finite_logic(data, model)
+        w,=where(finite_logic)
+        if w.size != data.size:
+            print("found %d/%d finite P,Q,R" % (w.size,data.size))
+
+        logic = logic & finite_logic
+
+    w,=where(logic)
+    if w.size != data.size:
+        print("kept %d/%d" % (w.size,data.size))
+    return w
+
 def do_calc_mean_shear(conf, cuts, subid):
     """
     Read the data and calculate the mean shear according
@@ -46,40 +86,18 @@ def do_calc_mean_shear(conf, cuts, subid):
     data=files.read_output(**conf)
 
     if 'nfit' in conf['run']:
+        shear_expand = get_shear_expand(conf)
         model=conf['fit_models'][0]
 
-        model_flagname='%s_flags' % model
-
-        flagval=cuts['flagval']
-
-        logic = data['flags'] == flagval
-
-        w,=where(logic)
-        if w.size != data.size:
-            print("found %d/%d with flags==0" % (w.size,data.size))
-
-        model_flag_logic = (data[model_flagname]==0)
-        w,=where(model_flag_logic)
-        if w.size != data.size:
-            print("found %d/%d with %s==0" % (w.size,data.size,model_flagname))
-
-        logic = logic & model_flag_logic
-
-        if cuts['check_finite']:
-            finite_logic = get_finite_logic(data, model)
-            w,=where(finite_logic)
-            if w.size != data.size:
-                print("found %d/%d finite P,Q,R" % (w.size,data.size))
-
-            logic = logic & finite_logic
-
-        w,=where(logic)
-        if w.size != data.size:
-            print("kept %d/%d" % (w.size,data.size))
+        w=do_nfit_select(data, conf, cuts)
 
         data=data[w]
 
         res=great3.nfit.get_shear(data, model)
+
+        print("adding shear expand:",shear_expand)
+        res['shear'] += shear_expand
+
     elif 'rg' in conf['run']:
         res=great3.rg.select_and_calc_shear(data, **cuts)
     else:

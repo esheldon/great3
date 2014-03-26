@@ -611,6 +611,35 @@ def read_shear(**keys):
         out['shear'][i,1] = d[2]
     return out
 
+def read_shear_subid(**keys):
+    """
+    Get the shear for a particular subid
+    """
+    if 'subid' not in keys:
+        raise ValueError("send subid")
+
+    data=read_shear(**keys)
+
+    w,=numpy.where(data['subid']==keys['subid'])
+
+    return data['shear'][ w[0], :]
+
+def read_shear_expand(**keys):
+    """
+    Get the shear given a shear_expand_run and shear_expand_cut
+    """
+    shear_expand_run = keys['shear_expand_run']
+    shear_expand_cut = keys['shear_expand_cut']
+
+    cc={}
+    cc.update(**keys)
+
+    cc['run'] = shear_expand_run
+    cc['cut'] = shear_expand_cut
+    shear_expand=read_shear_subid(**cc)
+
+    return shear_expand
+
 
 def get_nsub(**keys):
     """

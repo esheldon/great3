@@ -71,16 +71,7 @@ def get_shear_expand(conf):
     if shear_expand_run is None:
         shear_expand=zeros(2)
     else:
-        cc={}
-        cc.update(conf)
-
-        cc['run'] = shear_expand_run
-        cc['cut'] = cc['shear_expand_cut']
-        shear_data=files.read_shear(**cc)
-
-        w,=where(shear_data['subid'] == cc['subid'])
-        shear_expand = shear_data['shear'][w[0],:]
-
+        shear_expand = files.read_shear_expand(**conf)
 
     print("using shear expand run:",shear_expand_run)
     print("using shear expand:",shear_expand)
