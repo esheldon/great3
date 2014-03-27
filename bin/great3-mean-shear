@@ -49,7 +49,9 @@ def get_shear_expand(conf):
 
 
 def do_nfit_select(data, conf, cuts):
+    model=conf['fit_models'][0]
     model_flagname='%s_flags' % model
+    s2n_flagname='%s_s2n_w' % model
 
     logic = data['flags'] == 0
 
@@ -72,6 +74,17 @@ def do_nfit_select(data, conf, cuts):
 
         logic = logic & finite_logic
 
+    if 's2n_range' in cuts:
+        s2nr = cuts['s2n_range']
+        s2n_logic = (  (data[s2n_flagname] > s2nr[0])
+                     & (data[s2n_flagname] < s2nr[1]) )
+        w,=where(s2n_logic)
+        if w.size != data.size:
+            print("found %d/%d s2n in [%s,%s]" % (w.size,data.size,s2nr[0],s2nr[1]))
+
+        logic = logic & s2n_logic
+
+
     w,=where(logic)
     if w.size != data.size:
         print("kept %d/%d" % (w.size,data.size))
@@ -83,6 +96,7 @@ def do_calc_mean_shear(conf, cuts, subid):
     the the run type
     """
     conf['subid']=subid
+    print("-"*70)
     data=files.read_output(**conf)
 
     if 'nfit' in conf['run']:

@@ -74,16 +74,16 @@ class NGMixFitter(FitterBase):
 
         model=conf['psf_model']
         if 'em' in model:
-            ngauss=_em_ngauss_map[model]
+            ngauss=get_em_ngauss(model)
             if ngauss==1:
                 fitter=self._fit_em_1gauss(self.psf_image,
                                            self.psf_cen_guess,
                                            sigma_guess)
             else:
-                fitter=self._fit_em_2gauss(self.psf_image,
+                fitter=self._fit_em_ngauss(self.psf_image,
                                            self.psf_cen_guess,
-                                           sigma_guess)
-
+                                           sigma_guess,
+                                           ngauss)
         else:
             raise ValueError("unsupported psf model: '%s'" % model)
 
@@ -94,13 +94,13 @@ class NGMixFitter(FitterBase):
             psf_gmix = fitter.get_gmix()
             print("psf fit:")
             print(psf_gmix)
-            print("psf T:",psf_gmix.get_T())
+            print("psf fwhm:",2.35*sqrt( psf_gmix.get_T()/2. ))
 
             self.psf_gmix=psf_gmix
             self.res['psf_gmix']=psf_gmix
 
             if self.make_plots:
-                self._compare_psf(fitter)
+                self._compare_psf(fitter, model)
 
 
     def _fit_em_1gauss(self, im, cen, sigma_guess):
@@ -109,7 +109,7 @@ class NGMixFitter(FitterBase):
         """
         return self._fit_with_em(im, cen, sigma_guess, 1)
 
-    def _fit_em_2gauss(self, im, cen, sigma_guess):
+    def _fit_em_ngauss(self, im, cen, sigma_guess, ngauss):
         """
         First fit 1 gauss and use it for guess
         """
@@ -118,20 +118,18 @@ class NGMixFitter(FitterBase):
         gmix=fitter1.get_gmix()
         sigma_guess_new = sqrt( gmix.get_T()/2. )
 
-        fitter2=self._fit_with_em(im, cen, sigma_guess_new, 2)
+        fitter_n=self._fit_with_em(im, cen, sigma_guess_new, ngauss)
 
-        return fitter2
+        return fitter_n
+
+
 
     def _fit_with_em(self, im, cen, sigma_guess, ngauss):
         """
         Fit the image using EM
         """
         import ngmix
-        from ngmix.gexceptions import GMixMaxIterEM
-
-        if ngauss <= 0 or ngauss > 2:
-            raise ValueError("unsupported em ngauss: %d" % ngauss)
-
+        from ngmix.gexceptions import GMixMaxIterEM, GMixRangeError
         conf=self.conf
 
         im_with_sky, sky = ngmix.em.prep_image(im)
@@ -140,14 +138,19 @@ class NGMixFitter(FitterBase):
         ntry,maxiter,tol = self._get_em_pars()
         for i in xrange(ntry):
             guess = self._get_em_guess(sigma_guess, ngauss)
-            print("    guess:",guess)
+            print("em guess:")
+            print(guess)
             try:
                 fitter=self._do_fit_em_with_full_guess(im_with_sky,
                                                        sky,
                                                        guess,
                                                        jacob)
+                tres=fitter.get_result()
+                print("em numiter:",tres['numiter'])
                 break
             except GMixMaxIterEM:
+                fitter=None
+            except GMixRangeError:
                 fitter=None
 
         return fitter
@@ -176,8 +179,10 @@ class NGMixFitter(FitterBase):
             return self._get_em_guess_1gauss(sigma)
         elif ngauss==2:
             return self._get_em_guess_2gauss(sigma)
+        elif ngauss==3:
+            return self._get_em_guess_3gauss(sigma)
         else:
-            raise ValueError("1 or 2 em gauss")
+            return self._get_em_guess_ngauss(sigma,ngauss)
 
     def _get_em_guess_1gauss(self, sigma):
         import ngmix
@@ -214,14 +219,73 @@ class NGMixFitter(FitterBase):
 
         return ngmix.gmix.GMix(pars=pars)
 
+    def _get_em_guess_3gauss(self, sigma):
+        import ngmix
+
+        sigma2 = sigma**2
+
+        glist=[]
+
+        pars=array( [_em3_pguess[0]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[1]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[2]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu())]
+
+                  )
+
+
+        return ngmix.gmix.GMix(pars=pars)
+
+
+    def _get_em_guess_ngauss(self, sigma, ngauss):
+        import ngmix
+
+        sigma2 = sigma**2
+
+        glist=[]
+
+        for i in xrange(ngauss):
+            if i > 2:
+                ig=2
+            else:
+                ig=i
+
+            glist += [_em3_pguess[ig]*(1.0 + 0.1*srandu()),
+                      0.1*srandu(),
+                      0.1*srandu(),
+                      _em3_fguess[ig]*sigma2*(1.0 + 0.1*srandu()),
+                      0.1*srandu(),
+                      _em3_fguess[ig]*sigma2*(1.0 + 0.1*srandu())]
+
+        pars=array(glist)
+
+        return ngmix.gmix.GMix(pars=pars)
+
+
     def _get_em_pars(self):
         conf=self.conf
         if self.fitting_galaxy:
             return conf['gal_em_ntry'], conf['gal_em_maxiter'], conf['gal_em_tol']
         else:
-            return conf['gal_em_ntry'], conf['gal_em_maxiter'], conf['gal_em_tol']
+            return conf['psf_em_ntry'], conf['psf_em_maxiter'], conf['psf_em_tol']
 
-    def _compare_psf(self, fitter):
+    def _compare_psf(self, fitter, model):
         """
         compare psf image to best fit model
         """
@@ -235,7 +299,7 @@ class NGMixFitter(FitterBase):
                                   label2=self.conf['psf_model'],
                                   show=False)
 
-        pname='psf-resid-%06d.png' % self.index
+        pname='psf-resid-%s-%06d.png' % (model, self.index)
         print("          ",pname)
         plt.write_img(1400,800,pname)
 
@@ -1162,12 +1226,19 @@ def get_bfrac_prior(conf):
 
     return bfrac_prior
 
-_em2_fguess=array([0.5793612389470884,1.621860687127999])
-_em2_pguess=array([0.596510042804182,0.4034898268889178])
+_em2_fguess =array([0.5793612389470884,1.621860687127999])
+_em2_pguess =array([0.596510042804182,0.4034898268889178])
+
+_em3_pguess = array([0.596510042804182,0.4034898268889178,1.303069003078001e-07])
+_em3_fguess = array([0.5793612389470884,1.621860687127999,7.019347162356363],dtype='f8')
+
 #_em2_fguess=array([12.6,3.8])
 #_em2_fguess[:] /= _em2_fguess.sum()
 #_em2_pguess=array([0.30, 0.70])
-_em_ngauss_map = {'em1':1, 'em2':2}
+#_em_ngauss_map = {'em1':1, 'em2':2, 'em3':3,'em4':4,'em5':5,'em6':6}
+def get_em_ngauss(name):
+    ngauss=int( name[2:] )
+    return ngauss
 
 _stat_names=['s2n_w',
              'chi2per',
@@ -1234,7 +1305,10 @@ def get_positive_guess(val, n, width=0.01):
     from ngmix.gexceptions import GMixRangeError
 
     if val <= 0.0:
-        raise GMixRangeError("val <= 0: %s" % val)
+        print("val <= 0: %s" % val)
+        print("using arbitrary value of 0.1")
+        val=0.1
+        #raise GMixRangeError("val <= 0: %s" % val)
 
     vals=numpy.zeros(n)-9999.0
     while True:
