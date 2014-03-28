@@ -725,44 +725,71 @@ class NGMixFitter(FitterBase):
         em fits
         """
         import ngmix
-        from ngmix.fitting import MCMCBDFJoint
+        from ngmix.fitting import MCMCBDFJointHybrid
 
         cen_prior=self.cen_prior
 
         res=self.res
         conf=self.conf
 
-        full_guess=self._get_guess_bdf_joint()
+        nwalkers=conf['nwalkers']
+        ntry=conf['mcmc_ntry']
 
-        fitter=MCMCBDFJoint(self.gal_image,
-                            self.weight_image,
-                            res['jacob'],
-                            psf=res['psf_gmix'],
-
-                            nwalkers=conf['nwalkers'],
-                            burnin=conf['burnin'],
-                            nstep=conf['nstep'],
-                            mca_a=conf['mca_a'],
-
-                            Tfracdiff_max=conf['Tfracdiff_max'],
-
-                            shear_expand=self.shear_expand,
-
-                            full_guess=full_guess,
-
-                            cen_prior=cen_prior,
-                            joint_prior=self.joint_prior,
-
-                            do_pqr=conf['do_pqr'])
+        which_arate=1
+        for i in xrange(ntry):
 
 
-        fitter.go()
+            full_guess=self._get_guess_bdf_joint(nwalkers=nwalkers)
+
+            fitter=MCMCBDFJointHybrid(self.gal_image,
+                                      self.weight_image,
+                                      res['jacob'],
+                                      psf=res['psf_gmix'],
+
+                                      nwalkers=nwalkers,
+                                      burnin=conf['burnin'],
+                                      nstep=conf['nstep'],
+                                      mca_a=conf['mca_a'],
+
+                                      #Tfracdiff_max=conf['Tfracdiff_max'],
+
+                                      shear_expand=self.shear_expand,
+
+                                      full_guess=full_guess,
+
+                                      cen_prior=cen_prior,
+                                      joint_prior=self.joint_prior,
+
+                                      do_pqr=conf['do_pqr'])
+
+
+            fitter.go()
+
+            tres=fitter.get_result()
+
+            if (tres['arate'] < conf['min_arate']
+                    and i < (ntry-1) and which_arate==1):
+                nwalkers = nwalkers*conf['nwalkers_multiply']
+                which_arate=2
+                print("low arate:",tres['arate'],"trying with nwalkers=",nwalkers)
+                continue
+
+            # guard against rare mcmc problems
+            if (tres['pars'] is not None
+                    and tres['flags'] == 0
+                    and abs(tres['pars'][2]) <1 ):
+                break
+            else:
+                print("          bad mcmc result:")
+                pprint(tres)
+                print("          trying again")
+
 
         self.res['bdf'] = {'fitter':fitter,
                            'res':fitter.get_result()}
 
 
-    def _get_guess_bdf_joint(self):
+    def _get_guess_bdf_joint(self, nwalkers=1):
         """
         Get a guess centered on the truth
 
@@ -771,7 +798,6 @@ class NGMixFitter(FitterBase):
 
         width = 0.01
 
-        nwalkers = self.conf['nwalkers']
 
         res=self.res
         gmix = res['em_gmix']
@@ -788,13 +814,13 @@ class NGMixFitter(FitterBase):
         guess[:,2]=guess_shape[:,0]
         guess[:,3]=guess_shape[:,1]
 
-        guess[:,4] = get_positive_guess(T,nwalkers,width=width)
+        guess[:,4] = log10( get_positive_guess(T,nwalkers,width=width) )
 
         # got anything better?
         Fb = 0.1*flux
         Fd = 0.9*flux
-        guess[:,5] = get_positive_guess(Fb,nwalkers,width=width)
-        guess[:,6] = get_positive_guess(Fd,nwalkers,width=width)
+        guess[:,5] = log10( get_positive_guess(Fb,nwalkers,width=width) )
+        guess[:,6] = log10( get_positive_guess(Fd,nwalkers,width=width) )
 
         return guess
 
