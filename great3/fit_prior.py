@@ -13,21 +13,36 @@ NGAUSS_DEFAULT=20
 N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 
+S2N_RANGE=[50.0, 1000.0]
 
-def read_field_list(run, model,noshape=False):
+def read_field_list(run, model, **keys):
+    """
+    read in results from a deep field
+    """
     conf=files.read_config(run)
+    s2n_range=keys.get('s2n_range',S2N_RANGE)
+    noshape=keys.get('noshape',False)
+
+    print("s2n_range:",s2n_range)
+    print("noshape:",noshape)
 
     pars_name='%s_pars' % model
+    s2n_name='%s_s2n_w' % model
 
     field_list=[]
     for subid in xrange(5):
         conf['subid']=subid
         data=files.read_output(**conf)
 
+        w,=where(  (data[s2n_name] > s2n_range[0])
+                 & (data[s2n_name] < s2n_range[1]) )
+
+        pars = data[pars_name]
+
         if noshape:
-            pars=data[pars_name][:,4:]
+            pars=data[pars_name][w,4:]
         else:
-            pars=data[pars_name][:,2:]
+            pars=data[pars_name][w,2:]
         field_list.append(pars)
 
     return field_list
@@ -37,7 +52,8 @@ def fit_joint_run(run, model, **keys):
     conf=files.read_config(run)
 
     noshape=keys.get('noshape',False)
-    field_list=read_field_list(run, model,noshape=noshape)
+
+    field_list=read_field_list(run, model, **keys)
 
 
     dolog=keys.get('dolog',True)
@@ -55,20 +71,35 @@ def fit_joint_run(run, model, **keys):
     print(eps_name)
 
     if noshape:
-        fit_joint_noshape(field_list,
+        fit_joint_noshape(field_list,model,
                           fname=fits_name,
                           eps=eps_name,
                           **keys)
 
 
     else:
-        fit_joint_all(field_list,
+        fit_joint_all(field_list,model,
                       fname=fits_name,
                       eps=eps_name,
                       **keys)
 
 
-def fit_joint_noshape(field_list,
+def get_par_labels(model, ndim, dolog):
+    if model=='bdf':
+        if dolog:
+            par_labels=_par_labels_bdf_log[ndim]
+        else:
+            par_labels=_par_labels_bdf_lin[ndim]
+    else:
+        if dolog:
+            par_labels=_par_labels_log[ndim]
+        else:
+            par_labels=_par_labels_lin[ndim]
+
+
+    return par_labels
+
+def fit_joint_noshape(field_list,model,
                       ngauss=NGAUSS_DEFAULT,
                       n_iter=N_ITER_DEFAULT,
                       min_covar=MIN_COVAR,
@@ -98,10 +129,7 @@ def fit_joint_noshape(field_list,
     ndim = usepars.shape[1]
     assert (ndim==2 or ndim==3),"ndim should be 2 or 3"
 
-    if dolog:
-        par_labels=_par_labels_log[ndim]
-    else:
-        par_labels=_par_labels_lin[ndim]
+    par_labels=get_par_labels(model, ndim, dolog)
 
     gmm0=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
 
@@ -131,9 +159,7 @@ def fit_joint_noshape(field_list,
     return output
 
 
-
-
-def fit_joint_all(field_list,
+def fit_joint_all(field_list,model,
                   ngauss=NGAUSS_DEFAULT,
                   n_iter=N_ITER_DEFAULT,
                   min_covar=MIN_COVAR,
@@ -173,10 +199,7 @@ def fit_joint_all(field_list,
     ndim = usepars.shape[1]
     assert (ndim==3 or ndim==4),"ndim should be 3 or 4"
 
-    if dolog:
-        par_labels=_par_labels_log[ndim]
-    else:
-        par_labels=_par_labels_lin[ndim]
+    par_labels=get_par_labels(model, ndim, dolog)
 
     gmm0=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
 
@@ -224,6 +247,16 @@ def make_joint_gmm(weights, means, covars):
     gmm.weights_ = weights.copy()
 
     return gmm
+
+_par_labels_bdf_log={}
+_par_labels_bdf_log[3] = [r'$log_{10}(T)$',
+                          r'$log_{10}(F_b)$',
+                          r'$log_{10}(F_d)$']
+_par_labels_bdf_log[4] = [r'$|\eta|$',
+                          r'$log_{10}(T)$',
+                          r'$log_{10}(F_b)$',
+                          r'$log_{10}(F_d)$']
+
 
 _par_labels_log={}
 _par_labels_log[2] = [r'$log_{10}(T)$',
@@ -497,7 +530,7 @@ def get_norm_hist(data, min=None, max=None, binsize=1):
     return hdict
 
 
-def fit_g_prior(run, model):
+def fit_g_prior(run, model, **keys):
     """
     Fit only the g prior
     """
@@ -505,7 +538,7 @@ def fit_g_prior(run, model):
     import biggles
     import mcmc
 
-    fl=read_field_list(run, model)
+    fl=read_field_list(run, model, **keys)
     comb=make_combined_pars_subtract_mean_shape(fl)
 
     g=comb[:,0]
@@ -514,19 +547,29 @@ def fit_g_prior(run, model):
 
     hdict=get_norm_hist(g, min=0, binsize=binsize)
 
+    yrange=[0.0, 1.1*(hdict['hist_norm']+hdict['hist_norm_err']).max()]
     plt=eu.plotting.bscatter(hdict['center'],
                              hdict['hist_norm'],
                              yerr=hdict['hist_norm_err'],
+                             yrange=yrange,
                              show=False)
 
     ivar = ones(hdict['center'].size)
     w,=where(hdict['hist_norm_err'] > 0.0)
     if w.size > 0:
-        ivar[w] = 1.0/hdict['hist_norm_err']**2
+        ivar[w] = 1.0/hdict['hist_norm_err'][w]**2
 
-    gpfitter=GPriorFitter(hdict['center'],
-                          hdict['hist_norm'],
-                          ivar)
+    gmax_free=keys.get('gmax_free',False)
+    if gmax_free:
+        print("gmax free")
+        gpfitter=GPriorFitterGMax(hdict['center'],
+                                  hdict['hist_norm'],
+                                  ivar)
+    else:
+        print("gmax fixed")
+        gpfitter=GPriorFitter(hdict['center'],
+                              hdict['hist_norm'],
+                              ivar)
 
     gpfitter.do_fit()
     gpfitter.print_result()
@@ -537,13 +580,136 @@ def fit_g_prior(run, model):
     crv=biggles.Curve(gvals, model, color='red')
     plt.add(crv)
 
+    #zcrv=biggles.Curve([0.0,1.0],[0.0,0.0])
+    #plt.add(zcrv)
+
     mcmc.plot_results(gpfitter.trials)
     plt.show()
 
-class GPriorFitter:
-    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000):
+class GPriorFitterGMax(GPriorFitter):
+    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, **keys):
+        super(GPriorFitterGMax,self).__init__(xvals, yvals, ivar,
+                                              nwalkers=100, burnin=1000, nstep=1000, **keys)
+        self.npars=4
+
+    def get_guess(self):
+        xstep=self.xvals[1]-self.xvals[0]
+
+        self.Aguess = self.yvals.sum()*xstep
+        aguess=1.11
+        g0guess=0.052
+        gmax_guess=0.87
+
+        pcen=array( [self.Aguess, aguess, g0guess, gmax_guess])
+        print("pcen:",pcen)
+
+        guess=zeros( (self.nwalkers,self.npars) )
+        width=0.1
+
+        nwalkers=self.nwalkers
+        guess[:,0] = pcen[0]*(1.+width*srandu(nwalkers))
+        guess[:,1] = pcen[1]*(1.+width*srandu(nwalkers))
+        guess[:,2] = pcen[2]*(1.+width*srandu(nwalkers))
+        guess[:,3] = pcen[3]*(1.+width*srandu(nwalkers))
+
+        return guess
+
+
+    def get_lnprob(self, pars):
+        w,=where(pars < 0)
+        if w.size > 0:
+            return -9.999e20
+
+        A=pars[0]
+        a=pars[1]
+
+        if a > 1000:
+            return -9.999e20
+
+        model=self.get_model_val(pars)
+
+        chi2 = (model - self.yvals)**2
+        chi2 *= self.ivar
+        lnprob = -0.5*chi2.sum()
+
+        ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
+        #ap = -0.5*( (A-self.Aguess)/(self.Aguess) )**2
+        lnprob += ap
+        #print(pars)
+        #print(lnprob)
+
+        return lnprob
+
+
+    def get_model_val(self, pars, g=None):
+        from numpy import pi
+
+
+        A=pars[0]
+        a=pars[1]
+        g0=pars[2]
+        gmax=pars[3]
+
+        if g is None:
+            g=self.xvals
+
+        model=zeros(g.size)
+
+        gsq = g**2
+
+        w,=where( (gsq < 1.0) & (g < gmax) )
+        if w.size > 0:
+            omgsq=1.0-gsq[w]
+            omgsq_sq = omgsq[w]*omgsq[w]
+
+            gw=g[w]
+            numer = 2*pi*gw*A*(1-exp( (gw-gmax)/a )) * omgsq_sq
+            denom = (1+gw)*sqrt(gw**2 + g0**2)
+
+            model[w]=numer/denom
+
+        return model
+
+
+
+
+    def _calc_result(self):
+        import mcmc
+        pars,pcov=mcmc.extract_stats(self.trials)
+
+        d=diag(pcov)
+        perr = sqrt(d)
+
+        self.result={'arate':self.arate,
+                     'A':pars[0],
+                     'A_err':perr[0],
+                     'a':pars[1],
+                     'a_err':perr[1],
+                     'g0':pars[2],
+                     'g0_err':perr[2],
+                     'gmax':pars[3],
+                     'gmax_err':perr[3],
+                     'pars':pars,
+                     'pcov':pcov,
+                     'perr':perr}
+
+    def print_result(self):
+
+
+        fmt="""    arate: %(arate)s
+    A:     %(A).6g +/- %(A_err).6g
+    a:     %(a).6g +/- %(a_err).6g
+    g0:    %(g0).6g +/- %(g0_err).6g
+    gmax:  %(gmax).6g +/- %(gmax_err).6g\n"""
+
+        print( fmt % self.result )
+
+
+
+class GPriorFitter(object):
+    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, gmax=1.0):
         """
-        Fit with gmax free
+        Fit with gmax fixed
         Input is the histogram data
         """
         self.xvals=xvals
@@ -556,7 +722,7 @@ class GPriorFitter:
 
         #self.npars=6
         self.npars=3
-        self.gmax=1.0
+        self.gmax=gmax
 
     def get_result(self):
         return self.result
@@ -580,6 +746,9 @@ class GPriorFitter:
 
         self.trials  = sampler.flatchain
 
+        arates = sampler.acceptance_fraction
+        self.arate = arates.mean()
+
         self._calc_result()
 
     def _calc_result(self):
@@ -589,7 +758,8 @@ class GPriorFitter:
         d=diag(pcov)
         perr = sqrt(d)
 
-        self.result={'A':pars[0],
+        self.result={'arate':self.arate,
+                     'A':pars[0],
                      'A_err':perr[0],
                      'a':pars[1],
                      'a_err':perr[1],
@@ -611,7 +781,9 @@ class GPriorFitter:
     gmax: %(gmax).6g +/- %(gmax_err).6g
     s:    %(s).6g +/- %(s_err).6g
     r:    %(r).6g +/- %(r_err).6g\n"""
-        fmt="""    A:    %(A).6g +/- %(A_err).6g
+
+        fmt="""    arate: %(arate)s
+    A:    %(A).6g +/- %(A_err).6g
     a:    %(a).6g +/- %(a_err).6g
     g0:   %(g0).6g +/- %(g0_err).6g\n"""
 
