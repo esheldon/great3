@@ -559,12 +559,12 @@ def fit_g_prior(run, model, **keys):
     if w.size > 0:
         ivar[w] = 1.0/hdict['hist_norm_err'][w]**2
 
-    gmax_free=keys.get('gmax_free',False)
+    dev=keys.get('dev',False)
     if gmax_free:
-        print("gmax free")
-        gpfitter=GPriorFitterGMax(hdict['center'],
-                                  hdict['hist_norm'],
-                                  ivar)
+        print("dev")
+        gpfitter=GPriorFitterDev(hdict['center'],
+                                 hdict['hist_norm'],
+                                 ivar)
     else:
         print("gmax fixed")
         gpfitter=GPriorFitter(hdict['center'],
@@ -580,27 +580,23 @@ def fit_g_prior(run, model, **keys):
     crv=biggles.Curve(gvals, model, color='red')
     plt.add(crv)
 
-    #zcrv=biggles.Curve([0.0,1.0],[0.0,0.0])
-    #plt.add(zcrv)
-
     mcmc.plot_results(gpfitter.trials)
     plt.show()
 
-class GPriorFitterGMax(GPriorFitter):
+class GPriorFitterDev(GPriorFitter):
     def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, **keys):
         super(GPriorFitterGMax,self).__init__(xvals, yvals, ivar,
                                               nwalkers=100, burnin=1000, nstep=1000, **keys)
-        self.npars=4
+        self.npars=3
 
     def get_guess(self):
         xstep=self.xvals[1]-self.xvals[0]
 
         self.Aguess = self.yvals.sum()*xstep
-        aguess=1.11
-        g0guess=0.052
-        gmax_guess=0.87
+        bguess=2.3
+        cguess=6.7
 
-        pcen=array( [self.Aguess, aguess, g0guess, gmax_guess])
+        pcen=array( [self.Aguess, bguess, cguess] )
         print("pcen:",pcen)
 
         guess=zeros( (self.nwalkers,self.npars) )
@@ -610,7 +606,6 @@ class GPriorFitterGMax(GPriorFitter):
         guess[:,0] = pcen[0]*(1.+width*srandu(nwalkers))
         guess[:,1] = pcen[1]*(1.+width*srandu(nwalkers))
         guess[:,2] = pcen[2]*(1.+width*srandu(nwalkers))
-        guess[:,3] = pcen[3]*(1.+width*srandu(nwalkers))
 
         return guess
 
@@ -620,11 +615,6 @@ class GPriorFitterGMax(GPriorFitter):
         if w.size > 0:
             return -9.999e20
 
-        A=pars[0]
-        a=pars[1]
-
-        if a > 1000:
-            return -9.999e20
 
         model=self.get_model_val(pars)
 
@@ -632,9 +622,10 @@ class GPriorFitterGMax(GPriorFitter):
         chi2 *= self.ivar
         lnprob = -0.5*chi2.sum()
 
-        ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
+        #A=pars[0]
+        #ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
         #ap = -0.5*( (A-self.Aguess)/(self.Aguess) )**2
-        lnprob += ap
+        #lnprob += ap
         #print(pars)
         #print(lnprob)
 
@@ -646,32 +637,16 @@ class GPriorFitterGMax(GPriorFitter):
 
 
         A=pars[0]
-        a=pars[1]
-        g0=pars[2]
-        gmax=pars[3]
+        b=pars[1]
+        c=pars[2]
 
         if g is None:
             g=self.xvals
 
-        model=zeros(g.size)
-
-        gsq = g**2
-
-        w,=where( (gsq < 1.0) & (g < gmax) )
-        if w.size > 0:
-            omgsq=1.0-gsq[w]
-            omgsq_sq = omgsq[w]*omgsq[w]
-
-            gw=g[w]
-            numer = 2*pi*gw*A*(1-exp( (gw-gmax)/a )) * omgsq_sq
-            denom = (1+gw)*sqrt(gw**2 + g0**2)
-
-            model[w]=numer/denom
+        gsq=g**2
+        model=2*pi*g*A*exp( -b*g - c*gsq )
 
         return model
-
-
-
 
     def _calc_result(self):
         import mcmc
@@ -683,12 +658,10 @@ class GPriorFitterGMax(GPriorFitter):
         self.result={'arate':self.arate,
                      'A':pars[0],
                      'A_err':perr[0],
-                     'a':pars[1],
-                     'a_err':perr[1],
-                     'g0':pars[2],
-                     'g0_err':perr[2],
-                     'gmax':pars[3],
-                     'gmax_err':perr[3],
+                     'b':pars[1],
+                     'b_err':perr[1],
+                     'c':pars[2],
+                     'c_err':perr[2],
                      'pars':pars,
                      'pcov':pcov,
                      'perr':perr}
@@ -698,9 +671,8 @@ class GPriorFitterGMax(GPriorFitter):
 
         fmt="""    arate: %(arate)s
     A:     %(A).6g +/- %(A_err).6g
-    a:     %(a).6g +/- %(a_err).6g
-    g0:    %(g0).6g +/- %(g0_err).6g
-    gmax:  %(gmax).6g +/- %(gmax_err).6g\n"""
+    a:     %(b).6g +/- %(b_err).6g
+    g0:    %(c).6g +/- %(c_err).6g\n"""
 
         print( fmt % self.result )
 
