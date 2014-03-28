@@ -559,17 +559,17 @@ def fit_g_prior(run, model, **keys):
     if w.size > 0:
         ivar[w] = 1.0/hdict['hist_norm_err'][w]**2
 
-    dev=keys.get('dev',False)
-    if gmax_free:
-        print("dev")
-        gpfitter=GPriorFitterDev(hdict['center'],
+    bdf=keys.get('bdf',False)
+    if bdf:
+        print("bdf")
+        gpfitter=GPriorFitterBDF(hdict['center'],
                                  hdict['hist_norm'],
                                  ivar)
     else:
-        print("gmax fixed")
-        gpfitter=GPriorFitter(hdict['center'],
-                              hdict['hist_norm'],
-                              ivar)
+        print("exp")
+        gpfitter=GPriorFitterExp(hdict['center'],
+                                 hdict['hist_norm'],
+                                 ivar)
 
     gpfitter.do_fit()
     gpfitter.print_result()
@@ -583,102 +583,8 @@ def fit_g_prior(run, model, **keys):
     mcmc.plot_results(gpfitter.trials)
     plt.show()
 
-class GPriorFitterDev(GPriorFitter):
-    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, **keys):
-        super(GPriorFitterGMax,self).__init__(xvals, yvals, ivar,
-                                              nwalkers=100, burnin=1000, nstep=1000, **keys)
-        self.npars=3
 
-    def get_guess(self):
-        xstep=self.xvals[1]-self.xvals[0]
-
-        self.Aguess = self.yvals.sum()*xstep
-        bguess=2.3
-        cguess=6.7
-
-        pcen=array( [self.Aguess, bguess, cguess] )
-        print("pcen:",pcen)
-
-        guess=zeros( (self.nwalkers,self.npars) )
-        width=0.1
-
-        nwalkers=self.nwalkers
-        guess[:,0] = pcen[0]*(1.+width*srandu(nwalkers))
-        guess[:,1] = pcen[1]*(1.+width*srandu(nwalkers))
-        guess[:,2] = pcen[2]*(1.+width*srandu(nwalkers))
-
-        return guess
-
-
-    def get_lnprob(self, pars):
-        w,=where(pars < 0)
-        if w.size > 0:
-            return -9.999e20
-
-
-        model=self.get_model_val(pars)
-
-        chi2 = (model - self.yvals)**2
-        chi2 *= self.ivar
-        lnprob = -0.5*chi2.sum()
-
-        #A=pars[0]
-        #ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
-        #ap = -0.5*( (A-self.Aguess)/(self.Aguess) )**2
-        #lnprob += ap
-        #print(pars)
-        #print(lnprob)
-
-        return lnprob
-
-
-    def get_model_val(self, pars, g=None):
-        from numpy import pi
-
-
-        A=pars[0]
-        b=pars[1]
-        c=pars[2]
-
-        if g is None:
-            g=self.xvals
-
-        gsq=g**2
-        model=2*pi*g*A*exp( -b*g - c*gsq )
-
-        return model
-
-    def _calc_result(self):
-        import mcmc
-        pars,pcov=mcmc.extract_stats(self.trials)
-
-        d=diag(pcov)
-        perr = sqrt(d)
-
-        self.result={'arate':self.arate,
-                     'A':pars[0],
-                     'A_err':perr[0],
-                     'b':pars[1],
-                     'b_err':perr[1],
-                     'c':pars[2],
-                     'c_err':perr[2],
-                     'pars':pars,
-                     'pcov':pcov,
-                     'perr':perr}
-
-    def print_result(self):
-
-
-        fmt="""    arate: %(arate)s
-    A:     %(A).6g +/- %(A_err).6g
-    a:     %(b).6g +/- %(b_err).6g
-    g0:    %(c).6g +/- %(c_err).6g\n"""
-
-        print( fmt % self.result )
-
-
-
-class GPriorFitter(object):
+class GPriorFitterExp(object):
     def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, gmax=1.0):
         """
         Fit with gmax fixed
@@ -851,6 +757,102 @@ class GPriorFitter(object):
             model[w]=numer/denom
         """
         return model
+
+
+class GPriorFitterBDF(GPriorFitterExp):
+    def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, **keys):
+        super(GPriorFitterBDF,self).__init__(xvals, yvals, ivar,
+                                              nwalkers=100, burnin=1000, nstep=1000, **keys)
+        self.npars=3
+
+    def get_guess(self):
+        xstep=self.xvals[1]-self.xvals[0]
+
+        self.Aguess = self.yvals.sum()*xstep
+        bguess=2.3
+        cguess=6.7
+
+        pcen=array( [self.Aguess, bguess, cguess] )
+        print("pcen:",pcen)
+
+        guess=zeros( (self.nwalkers,self.npars) )
+        width=0.1
+
+        nwalkers=self.nwalkers
+        guess[:,0] = pcen[0]*(1.+width*srandu(nwalkers))
+        guess[:,1] = pcen[1]*(1.+width*srandu(nwalkers))
+        guess[:,2] = pcen[2]*(1.+width*srandu(nwalkers))
+
+        return guess
+
+
+    def get_lnprob(self, pars):
+        w,=where(pars < 0)
+        if w.size > 0:
+            return -9.999e20
+
+
+        model=self.get_model_val(pars)
+
+        chi2 = (model - self.yvals)**2
+        chi2 *= self.ivar
+        lnprob = -0.5*chi2.sum()
+
+        A=pars[0]
+        ap = -0.5*( (A-self.Aguess)/(self.Aguess*0.1) )**2
+        #ap = -0.5*( (A-self.Aguess)/(self.Aguess) )**2
+        #lnprob += ap
+        #print(pars)
+        #print(lnprob)
+
+        return lnprob
+
+
+    def get_model_val(self, pars, g=None):
+        from numpy import pi
+
+
+        A=pars[0]
+        b=pars[1]
+        c=pars[2]
+
+        if g is None:
+            g=self.xvals
+
+        gsq=g**2
+        model=2*pi*g*A*exp( -b*g - c*gsq )*(1-gsq)**2
+        #model=2*pi*g*A*exp( -0.5*gsq/sigma**2 )*(1-gsq)**2
+
+        return model
+
+    def _calc_result(self):
+        import mcmc
+        pars,pcov=mcmc.extract_stats(self.trials)
+
+        d=diag(pcov)
+        perr = sqrt(d)
+
+        self.result={'arate':self.arate,
+                     'A':pars[0],
+                     'A_err':perr[0],
+                     'b':pars[1],
+                     'b_err':perr[1],
+                     'c':pars[2],
+                     'c_err':perr[2],
+                     'pars':pars,
+                     'pcov':pcov,
+                     'perr':perr}
+
+    def print_result(self):
+
+        fmt="""    arate: %(arate)s
+    A:     %(A).6g +/- %(A_err).6g
+    b:     %(b).6g +/- %(b_err).6g
+    c:     %(c).6g +/- %(c_err).6g\n"""
+
+        print( fmt % self.result )
+
+
 
 
 def srandu(num=None):

@@ -24,6 +24,7 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
                                  t['covars'],
                                  g_prior)
 
+
     elif type == "great3-real_galaxy-ground-constant-exp-logpars":
         from ngmix.joint_prior import JointPriorSimpleLogPars
         t=files.read_prior(experiment="real_galaxy",
@@ -72,6 +73,23 @@ def make_joint_prior_bdf(type="great3-control-ground-constant-bdf"):
                         _great3_bdf_means,
                         _great3_bdf_covars)
                        
+    elif type == "great3-real_galaxy-ground-constant-bdf-hybrid":
+        # pretending we can separate out the shape prior
+        import ngmix
+        from ngmix.joint_prior import JointPriorBDFHybrid
+        t=files.read_prior(experiment="real_galaxy",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-rgc-deep02",
+                           partype="hybrid",
+                           ext="fits")
+
+        g_prior = ngmix.priors.make_gprior_great3_bdf()
+        p=JointPriorBDFHybrid(t['weights'],
+                              t['means'],
+                              t['covars'],
+                              g_prior)
+
     else:
         raise ValueError("bad type: '%s'" % type)
     return p
