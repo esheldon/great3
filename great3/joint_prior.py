@@ -7,15 +7,14 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
     Make a joint prior 
     """
 
-    if type == "great3-real_galaxy-ground-constant-exp-hybrid":
-        raise ValueError("use newer run")
+    if type == "great3-real_galaxy-ground-constant-exp-hybrid-deep03":
         # pretending we can separate out the shape prior
         import ngmix
         from ngmix.joint_prior import JointPriorSimpleHybrid
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
                            shear_type="constant",
-                           run="nfit-rgc-deep01",
+                           run="nfit-rgc-deep03",
                            partype="hybrid",
                            ext="fits")
 
