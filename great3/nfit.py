@@ -66,24 +66,35 @@ class NGMixFitter(FitterBase):
         if not self.conf['use_random_psf']:
             if hasattr(self,'psf_gmix'):
                 print("    re-using psf fit")
+                self.res['psf_gmix1']=self.psf_gmix1
                 self.res['psf_gmix']=self.psf_gmix
                 return
 
         conf=self.conf
         sigma_guess = conf['psf_fwhm_guess']/2.35
 
+        fitter1=self._fit_em_1gauss(self.psf_image,
+                                    self.psf_cen_guess,
+                                    sigma_guess)
+        if fitter1 is None:
+            self.res['flags'] = PSF_FIT_FAILURE
+            print("psf em1 failure at object",index)
+            return
+
+        psf_gmix1=fitter1.get_gmix()
+        self.psf_gmix1=psf_gmix1
+        self.res['psf_gmix_em1']=psf_gmix1
+
         model=conf['psf_model']
         if 'em' in model:
+            # update the fiducial
+            cen_guess = self.psf_cen_guess + array(psf_gmix1.get_cen())
+
             ngauss=get_em_ngauss(model)
-            if ngauss==1:
-                fitter=self._fit_em_1gauss(self.psf_image,
-                                           self.psf_cen_guess,
-                                           sigma_guess)
-            else:
-                fitter=self._fit_em_ngauss(self.psf_image,
-                                           self.psf_cen_guess,
-                                           sigma_guess,
-                                           ngauss)
+            fitter=self._fit_em_ngauss(self.psf_image,
+                                       cen_guess,
+                                       psf_gmix1,
+                                       ngauss)
         else:
             raise ValueError("unsupported psf model: '%s'" % model)
 
@@ -106,27 +117,30 @@ class NGMixFitter(FitterBase):
     def _fit_em_1gauss(self, im, cen, sigma_guess):
         """
         Just run the fitter
+
+        cen is the global cen not within jacobian
         """
         return self._fit_with_em(im, cen, sigma_guess, 1)
 
-    def _fit_em_ngauss(self, im, cen, sigma_guess, ngauss):
+    def _fit_em_ngauss(self, im, cen, gmix1, ngauss):
         """
-        First fit 1 gauss and use it for guess
+        Start with fit from using 1 gauss, which must be entered
+
+        cen is the global cen not within jacobian
         """
-        fitter1=self._fit_with_em(im, cen, sigma_guess, 1)
 
-        gmix=fitter1.get_gmix()
-        sigma_guess_new = sqrt( gmix.get_T()/2. )
+        sigma_guess = sqrt( gmix1.get_T()/2. )
+        fitter=self._fit_with_em(im, cen, sigma_guess, ngauss)
 
-        fitter_n=self._fit_with_em(im, cen, sigma_guess_new, ngauss)
-
-        return fitter_n
+        return fitter
 
 
 
     def _fit_with_em(self, im, cen, sigma_guess, ngauss):
         """
         Fit the image using EM
+
+        cen is the global cen not within jacobian
         """
         import ngmix
         from ngmix.gexceptions import GMixMaxIterEM, GMixRangeError
@@ -973,6 +987,7 @@ class NGMixFitter(FitterBase):
     def _print_res(self, res):
         pass
 
+
     def _copy_to_output(self, sub_index, res):
         """
         Copy the galaxy fits
@@ -984,9 +999,13 @@ class NGMixFitter(FitterBase):
         # overall flags, model flags copied below
         data['flags'][sub_index] = res['flags']
 
-        if 'psf_gmix' in res:
-            self._copy_psf_to_output(res['psf_gmix'])
+        if 'psf_gmix_em1' in res:
+            self._copy_psf_em1_to_output(res['psf_gmix_em1'],sub_index)
 
+        if 'psf_gmix' in res:
+            self._copy_psf_to_output(res['psf_gmix'],sub_index)
+
+            # em fit to convolved galaxy
             data['em_gauss_flux'][sub_index] = res['em_gauss_flux']
             data['em_gauss_flux_err'][sub_index] = res['em_gauss_flux_err']
             data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
@@ -1033,11 +1052,24 @@ class NGMixFitter(FitterBase):
             self.data[n['Q']][sub_index,:] = res['Q']
             self.data[n['R']][sub_index,:,:] = res['R']
  
-    def _copy_psf_to_output(self, psf_gmix):
+    def _copy_psf_em1_to_output(self, gmix, sub_index):
         """
         copy some psf info
         """
-        pass
+        g1,g2,T=gmix.get_g1g2T()
+
+        data=self.data
+        data['psf_em1_g'][sub_index,0] = g1
+        data['psf_em1_g'][sub_index,1] = g2
+        data['psf_em1_T'][sub_index] = T
+
+
+    def _copy_psf_to_output(self, gmix, sub_index):
+        """
+        copy some psf info
+        """
+        pars=gmix.get_full_pars()
+        self.data['psf_pars'][sub_index,:] = pars
 
     def _get_model_npars(self, model):
         """
@@ -1056,6 +1088,13 @@ class NGMixFitter(FitterBase):
         conf=self.conf
 
         dt = self._get_default_dtype()
+
+        psf_model=conf['psf_model']
+        if 'em' in psf_model:
+            ngauss=get_em_ngauss(psf_model)
+            dt += [('psf_pars','f8',ngauss*6)]
+        else:
+            raise ValueError("unsupported psf model: '%s'" % psf_model)
 
         n=get_model_names('em_gauss')
         dt += [(n['flux'],    'f8'),
@@ -1094,6 +1133,7 @@ class NGMixFitter(FitterBase):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
+        data['psf_pars'] = DEFVAL
         data['em_gauss_flux'] = DEFVAL
         data['em_gauss_flux_err'] = PDEFVAL
         data['em_gauss_cen'] = DEFVAL

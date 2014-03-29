@@ -219,7 +219,9 @@ class FitterBase(object):
 
         dt=[('id','i8'),
             ('processed','i2'),
-            ('flags','i4')]
+            ('flags','i4'),
+            ('psf_em1_g','f8',2), # always fit 1 gauss with em to psf
+            ('psf_em1_T','f8')]
 
         return dt
 

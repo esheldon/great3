@@ -8,6 +8,7 @@ def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars
     """
 
     if type == "great3-real_galaxy-ground-constant-exp-hybrid":
+        raise ValueError("use newer run")
         # pretending we can separate out the shape prior
         import ngmix
         from ngmix.joint_prior import JointPriorSimpleHybrid
