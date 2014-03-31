@@ -7,13 +7,16 @@ from __future__ import print_function
 import sys
 import yaml
 import numpy
-from numpy import where, isfinite, sqrt, zeros
+from numpy import where, isfinite, sqrt, zeros, diag
 
 import great3
 from great3 import files
 
 from optparse import OptionParser
 parser=OptionParser(__doc__)
+
+parser.add_option('--with-psf',action='store_true',
+                  help="include psf info. File name is different.")
 
 def get_finite_logic(data, model):
     """
@@ -101,11 +104,12 @@ def do_nfit_select(data, conf, cuts):
         print("kept %d/%d" % (w.size,data.size))
     return w
 
-def do_calc_mean_shear(conf, cuts, subid):
+def do_calc_mean_shear(conf, cuts, subid, with_psf=False):
     """
     Read the data and calculate the mean shear according
     the the run type
     """
+
     conf['subid']=subid
     print("-"*70)
     data=files.read_output(**conf)
@@ -123,12 +127,32 @@ def do_calc_mean_shear(conf, cuts, subid):
         print("adding shear expand:",shear_expand)
         res['shear'] += shear_expand
 
+        if with_psf:
+            res['psf_em1_g'] = data['psf_em1_g'].mean(axis=0)
+
     elif 'rg' in conf['run']:
         res=great3.rg.select_and_calc_shear(data, **cuts)
     else:
         raise ValueError("unsupported run type: '%s'" % conf['run'])
 
     return res
+
+def do_write_with_psf(subid, res, fobj):
+    err=sqrt(diag(res['shear_cov']))
+    out=(subid,
+         res['shear'][0],
+         res['shear'][1],
+         err[0],
+         err[1],
+         res['psf_em1_g'][0],
+         res['psf_em1_g'][1])
+
+    fobj.write('%d %.16g %.16g %.16g %.16g %.16g %.16g\n' % out)
+
+def do_write_no_psf(subid, res, fobj):
+    out=(subid, res['shear'][0], res['shear'][1])
+    fobj.write('%d %.16g %.16g\n' % out)
+
 
 def main():
     options,args = parser.parse_args(sys.argv[1:])
@@ -151,17 +175,24 @@ def main():
     nsub=files.get_nsub(**conf)
 
     conf['cut'] = cuts['cut']
-    outname=files.get_shear_file(**conf)
+
+    with_psf=options.with_psf
+
+    outname=files.get_shear_file(with_psf=with_psf, **conf)
     print("writing to output file:",outname)
 
     with open(outname,'w') as fobj:
         for subid in xrange(nsub):
-            res=do_calc_mean_shear(conf, cuts, subid)
-            out=(subid, res['shear'][0], res['shear'][1])
-            fobj.write('%d %.16g %.16g\n' % out)
+            res=do_calc_mean_shear(conf, cuts, subid, with_psf=with_psf)
+
+            if with_psf:
+                do_write_with_psf(subid,res, fobj)
+            else:
+                do_write_no_psf(subid,res, fobj)
 
             out2=(subid, res['shear'][0], sqrt(res['shear_cov'][0,0]),
                   res['shear'][1], sqrt(res['shear_cov'][1,1]) )
+
             print('%d %g +/- %g  %g +/- %g' % out2)
 
     print("output in:",outname)

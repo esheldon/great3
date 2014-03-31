@@ -570,14 +570,16 @@ def get_shear_file(**keys):
     """
     d=get_output_dir(**keys)
 
-    nkeys={}
-    nkeys.update(keys)
-    obj_range=nkeys.get('obj_range',None)
+    obj_range=keys.get('obj_range',None)
 
+    with_psf=keys.get('with_psf',False)
 
-    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s.dat'
+    if with_psf:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s-extra.dat'
+    else:
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s.dat'
 
-    fname = fname % nkeys
+    fname = fname % keys
 
     return os.path.join(d, fname)
 
@@ -585,6 +587,13 @@ def read_shear(**keys):
     """
     Same parameters as for get_shear_file
     """
+
+    with_psf=keys.get('with_psf',False)
+
+    if with_psf:
+        return read_shear_with_psf(**keys)
+
+    dt=[('subid','i4'), ('shear','f8',2)]
 
     fname=get_shear_file(**keys)
     print('reading:',fname)
@@ -602,14 +611,59 @@ def read_shear(**keys):
             dlist.append( (subid, shear1, shear2) )
 
     n=len(dlist)
-    out=numpy.zeros(n, dtype=[('subid','i4'),
-                              ('shear','f8',2)])
+    out=numpy.zeros(n, dtype=dt)
     for i in xrange(n):
         d=dlist[i]
         out['subid'][i] = d[0]
         out['shear'][i,0] = d[1]
         out['shear'][i,1] = d[2]
     return out
+
+def read_shear_with_psf(**keys):
+    """
+    Same parameters as for get_shear_file
+    """
+
+    with_psf=keys.get('with_psf',False)
+
+    dt=[('subid','i4'),
+        ('shear','f8',2),
+        ('shear_err','f8',2),
+        ('psf_g','f8',2)]
+
+    fname=get_shear_file(**keys)
+    print('reading:',fname)
+
+    dlist=[]
+    with open(fname) as fobj:
+        for line in fobj:
+            if line[0]=='#':
+                continue
+            vals=line.split()
+            subid=int(vals[0])
+            shear1=float(vals[1])
+            shear2=float(vals[2])
+
+            err1=float(vals[3])
+            err2=float(vals[4])
+            psf_g1=float(vals[5])
+            psf_g2=float(vals[6])
+            dlist.append( (subid, shear1, shear2,err1,err1,psf_g1,psf_g2) )
+
+    n=len(dlist)
+    out=numpy.zeros(n, dtype=dt)
+    for i in xrange(n):
+        d=dlist[i]
+        out['subid'][i] = d[0]
+        out['shear'][i,0] = d[1]
+        out['shear'][i,1] = d[2]
+        out['shear_err'][i,1] = d[3]
+        out['shear_err'][i,1] = d[4]
+        out['psf_g'][i,0] = d[5]
+        out['psf_g'][i,1] = d[6]
+
+    return out
+
 
 def read_shear_subid(**keys):
     """
