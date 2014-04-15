@@ -458,6 +458,8 @@ class NGMixFitter(FitterBase):
 
             if model=='bdf':
                 self._fit_bdf()
+            elif model=='sersic':
+                self._fit_sersic()
             else:
                 self._fit_simple(model)
 
@@ -465,6 +467,57 @@ class NGMixFitter(FitterBase):
 
             if self.make_plots:
                 self._do_gal_plots(model, self.res[model]['fitter'])
+
+    def _fit_sersic(self):
+        """
+        Fit a sersic model, taking guesses from our previous em fits
+        """
+        import ngmix
+        from ngmix.fitting import print_pars
+
+        res=self.res
+
+        priors=self.priors['sersic']
+
+        cen_prior=self.cen_prior
+        g_prior=priors['g']
+        T_prior=priors['T']
+        counts_prior=priors['counts']
+        n_prior=priors['n']
+
+        res=self.res
+        conf=self.conf
+
+        #image,wt,jacobian=self._get_image_data()
+
+        fitter=ngmix.fitting.MCMCSersic(self.gal_image,
+                                        self.weight_image,
+                                        res['jacob'],
+                                        psf=res['psf_gmix'],
+
+                                        nwalkers=conf['nwalkers'],
+                                        mca_a=conf['mca_a'],
+
+                                        shear_expand=self.shear_expand,
+
+                                        cen_prior=cen_prior,
+                                        T_prior=T_prior,
+                                        counts_prior=counts_prior,
+                                        g_prior=g_prior,
+                                        n_prior=n_prior,
+                                        do_pqr=conf['do_pqr'])
+
+        full_guess=self._get_guess_sersic(conf['nwalkers'])
+        pos=fitter.run_mcmc(full_guess,conf['burnin'])
+        pos=fitter.run_mcmc(pos,conf['nstep'])
+        fitter.calc_result()
+
+        self.res['sersic'] = {'fitter':fitter,
+                              'res':fitter.get_result()}
+
+        return fitter
+
+
 
 
     def _fit_simple(self, model):
@@ -600,6 +653,57 @@ class NGMixFitter(FitterBase):
         guess[:,5] = get_positive_guess(flux,nwalkers,width=widths[5])
 
         return guess
+
+
+    def _get_guess_sersic(self,
+                          num,
+                          pars=None,
+                          random_n=True,
+                          widths=[0.05, 0.05, 0.05, 0.05]):
+        """
+        Guess based on the em fit, with n drawn from prior
+        """
+
+        res=self.res
+
+        if pars is None:
+            gmix = res['em_gmix']
+            cen1,cen2=gmix.get_cen()
+            g1,g2,T = gmix.get_g1g2T()
+            flux = res['em_gauss_flux']
+        else:
+            cen1=pars[0]
+            cen2=pars[1]
+            g1=pars[2]
+            g2=pars[3]
+            T=pars[4]
+            flux=pars[5]
+
+        shapes=get_shape_guess(g1, g2, num, width=widths[1])
+
+        n_prior=self.priors['sersic']['n']
+
+        if random_n:
+            nvals = n_prior.sample(num)
+        else:
+            nvals=zeros(num)
+            nvals[:] = 0.5*(n_prior.minval+n_prior.maxval)
+
+        guess=zeros( (num, 7) )
+
+        guess[:,0] = cen1 + widths[0]*srandu(num)
+        guess[:,1] = cen2 + widths[0]*srandu(num)
+
+        guess[:,2]=shapes[:,0]
+        guess[:,3]=shapes[:,1]
+
+        guess[:,4] = get_positive_guess(T,num,width=widths[2])
+        guess[:,5] = get_positive_guess(flux,num,width=widths[3])
+
+        guess[:,6] = nvals
+
+        return guess
+
 
 
     def _get_guess_simple_joint(self):
@@ -843,78 +947,13 @@ class NGMixFitter(FitterBase):
 
 
     def _print_galaxy_res(self, model):
+        from ngmix.fitting import print_pars
         res=self.res[model]['res']
-        self._print_galaxy_cen(res)
-        self._print_galaxy_shape(res)
-        self._print_galaxy_T(res)
-        self._print_galaxy_flux(res)
 
-        if model=='bdf':
-            self._print_bfrac(res)
+        print_pars(res['pars'],     front="    pars: ")
+        print_pars(res['pars_err'], front="    err:  ")
+ 
         print('        arate:',res['arate'])
-
-    def _print_bfrac(self, res):
-        pars=res['pars']
-
-        flux=pars[5:].sum()
-        flux_b = pars[5]
-
-        bfrac = flux_b/flux
-        print('        bfrac: %g' % bfrac)
-
-    def _print_galaxy_cen(self, res):
-        """
-        print the center
-        """
-        pars=res['pars']
-        perr=res['pars_err']
-        mess='        cen: %.4g +/- %.4g %.4g +/- %.4g'
-        mess = mess % (pars[0],perr[0],pars[1],perr[1])
-        print(mess)
-
-    def _print_galaxy_shape(self, res):
-        """
-        print shape info
-        """
-        g1=res['pars'][2]
-        g1err=sqrt(res['pars_cov'][2,2])
-        g2=res['pars'][3]
-        g2err=sqrt(res['pars_cov'][3,3])
-
-        mess='        g1: %.4g +/- %.4g g2: %.4g +/- %.4g'
-        mess = mess % (g1,g1err,g2,g2err)
-        print(mess)
-
-    def _print_galaxy_flux(self, res):
-        """
-        print in a nice format
-        """
-
-        flux = res['pars'][5:].sum()
-        flux_err = sqrt( res['pars_cov'][5:, 5:].sum() )
-        s2n=flux/flux_err
-
-        print('        flux: %s +/- %s Fs2n: %s' % (flux,flux_err,s2n))
-
-    def _print_galaxy_T(self, res):
-        """
-        print T, Terr, Ts2n and sigma
-        """
-
-        T = res['pars'][4]
-        Terr = sqrt( res['pars_cov'][4,4] )
-
-        if Terr > 0:
-            Ts2n=T/Terr
-        else:
-            Ts2n=-9999.0
-        if T > 0:
-            sigma=sqrt(T/2.)
-        else:
-            sigma=-9999.0
-
-        tup=(T,Terr,Ts2n,sigma)
-        print('        T: %s +/- %s Ts2n: %s sigma: %s' % tup)
 
 
     def _finish_setup(self):
@@ -959,9 +998,11 @@ class NGMixFitter(FitterBase):
             T_priors=get_T_priors(conf)
             counts_priors=get_counts_priors(conf)
             g_priors=get_g_priors(conf)
+            n_priors=get_n_priors(conf)
 
             if (len(T_priors) != nmod
-                    or len(g_priors) != nmod
+                    or len(counts_priors) != nmod
+                    or len(n_priors) != nmod
                     or len(g_priors) != nmod):
                 raise ValueError("models and T,counts,g priors must be same length")
 
@@ -975,8 +1016,9 @@ class NGMixFitter(FitterBase):
                 counts_prior=counts_priors[i]
 
                 g_prior=g_priors[i]
+                n_prior=n_priors[i]
                 
-                modlist={'T':T_prior, 'counts':counts_prior,'g':g_prior}
+                modlist={'T':T_prior, 'counts':counts_prior, 'g':g_prior, 'n':n_prior}
                 priors[model] = modlist
 
             self.priors=priors
@@ -1075,7 +1117,7 @@ class NGMixFitter(FitterBase):
         """
         Get the models and number of parameters
         """
-        if model == 'bdf':
+        if model in ['sersic','bdf']:
             return 7
         else:
             return 6
@@ -1268,6 +1310,26 @@ def get_g_priors(conf):
 
     return g_priors
 
+def get_n_priors(conf):
+    import ngmix
+    n_prior_types=conf.get('n_prior_types',None)
+
+    if n_prior_types is None:
+        return None
+
+    n_priors=[]
+    for i,typ in enumerate(n_prior_types):
+        if typ =='flat':
+            pars=conf['n_prior_pars'][i]
+            n_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+        else:
+            raise ValueError("implement n prior '%s'")
+        n_priors.append(n_prior)
+
+    return n_priors
+
+
+
 def get_cen_prior(conf):
     import ngmix
     use_cen_prior=conf.get('use_cen_prior',False)
@@ -1343,6 +1405,11 @@ def get_shape_guess(g1, g2, n, width=0.01):
     """
     import ngmix
     from ngmix.gexceptions import GMixRangeError
+
+    gtot = sqrt(g1**2 + g2**2)
+    if gtot > 0.98:
+        g1 = g1*0.9
+        g2 = g2*0.9
 
     guess=numpy.zeros( (n, 2) )
     shape=ngmix.Shape(g1, g2)
