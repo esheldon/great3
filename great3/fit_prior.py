@@ -28,21 +28,23 @@ def read_field_list(run, model, **keys):
 
     pars_name='%s_pars' % model
     s2n_name='%s_s2n_w' % model
+    g_name='%s_g' % model
 
     field_list=[]
     for subid in xrange(5):
         conf['subid']=subid
         data=files.read_output(**conf)
 
+        g=sqrt( data[g_name][:,0]**2 + data[g_name][:,1]**2 )
         w,=where(  (data[s2n_name] > s2n_range[0])
-                 & (data[s2n_name] < s2n_range[1]) )
-
-        pars = data[pars_name]
+                 & (data[s2n_name] < s2n_range[1])
+                 & (g < 1.0))
 
         if noshape:
             pars=data[pars_name][w,4:]
         else:
             pars=data[pars_name][w,2:]
+
         field_list.append(pars)
 
     return field_list
@@ -51,14 +53,13 @@ def fit_joint_run(run, model, **keys):
     import fitsio
     conf=files.read_config(run)
 
-    noshape=keys.get('noshape',False)
+    keys['noshape']=keys.get('noshape',True)
+    keys['dolog']=keys.get('dolog',True)
 
     field_list=read_field_list(run, model, **keys)
 
-
-    dolog=keys.get('dolog',True)
-    if dolog:
-        if noshape:
+    if keys['dolog']:
+        if keys['noshape']:
             conf['partype']='hybrid'
         else:
             conf['partype']='logpars'
@@ -70,7 +71,7 @@ def fit_joint_run(run, model, **keys):
     print(fits_name)
     print(eps_name)
 
-    if noshape:
+    if keys['noshape']:
         fit_joint_noshape(field_list,model,
                           fname=fits_name,
                           eps=eps_name,
@@ -89,7 +90,12 @@ def get_par_labels(model, ndim, dolog):
         if dolog:
             par_labels=_par_labels_bdf_log[ndim]
         else:
-            par_labels=_par_labels_bdf_lin[ndim]
+            raise ValueError("only log for bdf")
+    elif model=='sersic':
+        if dolog:
+            par_labels=_par_labels_sersic_log[ndim]
+        else:
+            raise ValueError("only log for sersic")
     else:
         if dolog:
             par_labels=_par_labels_log[ndim]
@@ -127,7 +133,7 @@ def fit_joint_noshape(field_list,model,
         raise ValueError("no lin pars")
 
     ndim = usepars.shape[1]
-    assert (ndim==2 or ndim==3),"ndim should be 2 or 3"
+    assert (ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
 
     par_labels=get_par_labels(model, ndim, dolog)
 
@@ -145,7 +151,7 @@ def fit_joint_noshape(field_list,model,
     for i in xrange(ngauss):
         output['icovars'][i] = numpy.linalg.inv( output['covars'][i] )
 
-    # make sure our constructore works
+    # make sure our constructor works
     gmm_plot=make_joint_gmm(gmm0.weights_, gmm0.means_, gmm0.covars_)
 
     samples=gmm_plot.sample(usepars.shape[0]*100)
@@ -256,6 +262,13 @@ _par_labels_bdf_log[4] = [r'$|\eta|$',
                           r'$log_{10}(T)$',
                           r'$log_{10}(F_b)$',
                           r'$log_{10}(F_d)$']
+
+
+_par_labels_sersic_log={}
+_par_labels_sersic_log[3] = [r'$log_{10}(T)$',
+                             r'$log_{10}(F)$',
+                             r'$log_{10}(n)$']
+
 
 
 _par_labels_log={}
@@ -375,9 +388,7 @@ def make_logpars_and_subtract_mean_shape(field_list):
 
 def make_logpars(field_list):
     """
-    Subtract the mean g1,g2 from each field.
-
-    Store pars as eta1,eta2 and log of T and fluxes
+    Make log version of pars
     """
     import lensing
 
@@ -400,8 +411,7 @@ def make_logpars(field_list):
 
         print(start,end)
 
-        logpars[start:end, 0] = log10( f[:,0] )
-        logpars[start:end, 1:] = log10( f[:,1:] )
+        logpars[start:end, :] = log10( f[:,:] )
 
         start += nf
 
@@ -735,7 +745,7 @@ class GPriorFitterExp(object):
 
         gsq = g**2
 
-        w,=where(gsq < 1.0)
+        w,=where(gsq < self.gmax)
         if w.size > 0:
             omgsq=1.0-gsq[w]
             omgsq_sq = omgsq[w]*omgsq[w]

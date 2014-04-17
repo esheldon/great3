@@ -2,6 +2,32 @@ from __future__ import print_function
 from . import files
 from numpy import array
 
+def make_joint_prior_sersic(type="great3-cgc-sersic-hybrid-deep01"):
+    if type=="great3-cgc-sersic-hybrid-deep01":
+
+        # pretending we can separate out the shape prior
+        import ngmix
+        from ngmix.joint_prior import JointPriorSersicHybrid
+        t=files.read_prior(experiment="control",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-cgc-deep01",
+                           partype="hybrid",
+                           ext="fits")
+
+        g_prior=ngmix.priors.make_gprior_great3_sersic_cgc()
+
+        p=JointPriorSersicHybrid(t['weights'],
+                                 t['means'],
+                                 t['covars'],
+                                 g_prior)
+
+
+    else:
+        raise ValueError("bad type: '%s'" % type)
+
+    return p
+
 def make_joint_prior_simple(type="great3-real_galaxy-ground-constant-exp-linpars"):
     """
     Make a joint prior 

@@ -1,6 +1,6 @@
 from __future__ import print_function
 import numpy
-from numpy import sqrt, array, zeros, log10
+from numpy import sqrt, array, zeros, log10, where
 from numpy.random import random as randu
 from pprint import pprint
 
@@ -475,6 +475,10 @@ class NGMixFitter(FitterBase):
         import ngmix
         from ngmix.fitting import print_pars
 
+        if self.joint_prior is not None:
+            return self._fit_sersic_joint()
+
+
         res=self.res
 
         priors=self.priors['sersic']
@@ -511,6 +515,62 @@ class NGMixFitter(FitterBase):
         pos=fitter.run_mcmc(full_guess,conf['burnin'])
         pos=fitter.run_mcmc(pos,conf['nstep'])
         fitter.calc_result()
+
+        self.res['sersic'] = {'fitter':fitter,
+                              'res':fitter.get_result()}
+
+        return fitter
+
+
+    def _fit_sersic_joint(self):
+        """
+        Fit a sersic model with joint T-flux-n prior, taking guesses from our
+        previous em fits
+        """
+
+        import ngmix
+        from ngmix.fitting import print_pars
+
+        print("    Sersic Joint")
+
+        res=self.res
+
+        conf=self.conf
+
+        fitter=ngmix.fitting.MCMCSersicJointHybrid(self.gal_image,
+                                                   self.weight_image,
+                                                   res['jacob'],
+                                                   psf=res['psf_gmix'],
+
+                                                   nwalkers=conf['nwalkers'],
+                                                   mca_a=conf['mca_a'],
+
+                                                   shear_expand=self.shear_expand,
+
+                                                   cen_prior=self.cen_prior,
+                                                   joint_prior=self.joint_prior,
+                                                   do_pqr=conf['do_pqr'])
+
+        ntry=conf['mcmc_ntry']
+        for i in xrange(ntry):
+
+            full_guess=self._get_guess_sersic_joint(conf['nwalkers'])
+
+            pos=fitter.run_mcmc(full_guess,conf['burnin'])
+            pos=fitter.run_mcmc(pos,conf['nstep'])
+            fitter.calc_result()
+
+            # guard against rare mcmc problems
+            tres=fitter.get_result()
+            if (tres['pars'] is not None
+                    and tres['flags'] == 0
+                    and abs(tres['pars'][2]) <1 ):
+                break
+            else:
+                print("          bad mcmc result:")
+                pprint(tres)
+                print("          trying again")
+
 
         self.res['sersic'] = {'fitter':fitter,
                               'res':fitter.get_result()}
@@ -701,6 +761,79 @@ class NGMixFitter(FitterBase):
         guess[:,5] = get_positive_guess(flux,num,width=widths[3])
 
         guess[:,6] = nvals
+
+        return guess
+
+    def _get_guess_sersic_joint(self,
+                                num,
+                                pars=None,
+                                random_n=True,
+                                widths=[0.05, 0.05, 0.05, 0.05]):
+        """
+        Guess based on the em fit, with n drawn from prior
+        """
+
+        jp=self.joint_prior
+        res=self.res
+
+        if pars is None:
+            gmix = res['em_gmix']
+            cen1,cen2=gmix.get_cen()
+            g1,g2,T = gmix.get_g1g2T()
+            flux = res['em_gauss_flux']
+        else:
+            cen1=pars[0]
+            cen2=pars[1]
+            g1=pars[2]
+            g2=pars[3]
+            T=pars[4]
+            flux=pars[5]
+
+        shapes=get_shape_guess(g1, g2, num, width=widths[1])
+
+        if random_n:
+            rand_vals=jp.sample(num)
+            logn_vals = rand_vals[:,2]
+        else:
+            nvals=zeros(num)
+            logn_minval=jp.logn_bounds[0]
+            logn_maxval=jp.logn_bounds[1]
+            logn_vals[:] = 0.5*(logn_minval+logn_maxval) + 0.1*srandu(num)
+
+        logT_vals = log10( get_positive_guess(T,num,width=widths[2]) )
+        logF_vals = log10( get_positive_guess(flux,num,width=widths[3]) )
+
+
+        logT_bounds=jp.logT_bounds
+        logT_minval=logT_bounds[0]
+        logT_maxval=logT_bounds[1]
+
+        w, = where(  (logT_vals < logT_minval) | (logT_vals > logT_maxval) )
+        if w.size > 0:
+            logT_vals[w] = 0.5*(logT_minval+logT_maxval) + 0.1*srandu(w.size)
+
+
+        logF_bounds=jp.logFlux_bounds
+        logF_minval=logF_bounds[0]
+        logF_maxval=logF_bounds[1]
+
+        w, = where(  (logF_vals < logF_minval) | (logF_vals > logF_maxval) )
+        if w.size > 0:
+            logF_vals[w] = 0.5*(logF_minval+logF_maxval) + 0.1*srandu(w.size)
+
+
+        guess=zeros( (num, 7) )
+
+        guess[:,0] = cen1 + widths[0]*srandu(num)
+        guess[:,1] = cen2 + widths[0]*srandu(num)
+
+        guess[:,2] = shapes[:,0]
+        guess[:,3] = shapes[:,1]
+
+        guess[:,4] = logT_vals
+        guess[:,5] = logF_vals
+
+        guess[:,6] = logn_vals
 
         return guess
 
@@ -952,6 +1085,12 @@ class NGMixFitter(FitterBase):
 
         print_pars(res['pars'],     front="    pars: ")
         print_pars(res['pars_err'], front="    err:  ")
+        if self.joint_prior is not None:
+            linpars=res['pars'].copy()
+            linpars[4] = 10.0**linpars[4]
+            linpars[5] = 10.0**linpars[5]
+            linpars[6] = 10.0**linpars[6]
+            print_pars(linpars,     front="    linpars: ")
  
         print('        arate:',res['arate'])
 
@@ -1228,6 +1367,8 @@ def get_joint_prior(conf):
         jp=None
     elif 'bdf' in jptype:
         jp=joint_prior.make_joint_prior_bdf(type=jptype)
+    elif 'sersic' in jptype:
+        jp = joint_prior.make_joint_prior_sersic(type=jptype)
     else:
         jp = joint_prior.make_joint_prior_simple(type=jptype)
 
