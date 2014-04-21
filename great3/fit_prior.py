@@ -57,6 +57,7 @@ def fit_joint_run(run, model, **keys):
     keys['dolog']=keys.get('dolog',True)
 
     field_list=read_field_list(run, model, **keys)
+    usepars = make_logpars(field_list)
 
     if keys['dolog']:
         if keys['noshape']:
@@ -72,14 +73,14 @@ def fit_joint_run(run, model, **keys):
     print(eps_name)
 
     if keys['noshape']:
-        fit_joint_noshape(field_list,model,
+        fit_joint_noshape(usepars,model,
                           fname=fits_name,
                           eps=eps_name,
                           **keys)
 
 
     else:
-        fit_joint_all(field_list,model,
+        fit_joint_all(usepars,model,
                       fname=fits_name,
                       eps=eps_name,
                       **keys)
@@ -105,7 +106,8 @@ def get_par_labels(model, ndim, dolog):
 
     return par_labels
 
-def fit_joint_noshape(field_list,model,
+def fit_joint_noshape(usepars,
+                      model,
                       ngauss=NGAUSS_DEFAULT,
                       n_iter=N_ITER_DEFAULT,
                       min_covar=MIN_COVAR,
@@ -128,7 +130,6 @@ def fit_joint_noshape(field_list,model,
     print("min_covar:",min_covar)
     if dolog:
         print("using log pars")
-        usepars = make_logpars(field_list)
     else:
         raise ValueError("no lin pars")
 
@@ -572,7 +573,7 @@ def fit_g_prior(run, model, **keys):
     bdf=keys.get('bdf',False)
     if bdf:
         print("bdf")
-        gpfitter=GPriorFitterBDF(hdict['center'],
+        gpfitter=GPriorFitterAlt(hdict['center'],
                                  hdict['hist_norm'],
                                  ivar)
     else:
@@ -745,9 +746,9 @@ class GPriorFitterExp(object):
 
         gsq = g**2
 
-        w,=where(gsq < self.gmax)
+        w,=where(g < self.gmax)
         if w.size > 0:
-            omgsq=1.0-gsq[w]
+            omgsq=self.gmax-gsq[w]
             omgsq_sq = omgsq[w]*omgsq[w]
 
             gw=g[w]
@@ -769,9 +770,9 @@ class GPriorFitterExp(object):
         return model
 
 
-class GPriorFitterBDF(GPriorFitterExp):
+class GPriorFitterAlt(GPriorFitterExp):
     def __init__(self, xvals, yvals, ivar, nwalkers=100, burnin=1000, nstep=1000, **keys):
-        super(GPriorFitterBDF,self).__init__(xvals, yvals, ivar,
+        super(GPriorFitterAlt,self).__init__(xvals, yvals, ivar,
                                               nwalkers=100, burnin=1000, nstep=1000, **keys)
         self.npars=3
 

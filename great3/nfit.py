@@ -593,6 +593,7 @@ class NGMixFitter(FitterBase):
 
         priors=self.priors[model]
         g_prior=priors['g']
+
         T_prior=priors['T']
         counts_prior=priors['counts']
         cen_prior=self.cen_prior
@@ -600,29 +601,37 @@ class NGMixFitter(FitterBase):
         res=self.res
         conf=self.conf
 
-        full_guess=self._get_guess_simple()
+        # possible value errors
+        nretry=10
+        for i in xrange(nretry):
+            try:
 
-        fitter=ngmix.fitting.MCMCSimple(self.gal_image,
-                                        self.weight_image,
-                                        res['jacob'],
-                                        model,
-                                        psf=res['psf_gmix'],
+                full_guess=self._get_guess_simple()
 
-                                        nwalkers=conf['nwalkers'],
-                                        burnin=conf['burnin'],
-                                        nstep=conf['nstep'],
-                                        mca_a=conf['mca_a'],
+                fitter=ngmix.fitting.MCMCSimple(self.gal_image,
+                                                self.weight_image,
+                                                res['jacob'],
+                                                model,
+                                                psf=res['psf_gmix'],
 
-                                        full_guess=full_guess,
+                                                nwalkers=conf['nwalkers'],
+                                                burnin=conf['burnin'],
+                                                nstep=conf['nstep'],
+                                                mca_a=conf['mca_a'],
 
-                                        shear_expand=self.shear_expand,
+                                                full_guess=full_guess,
 
-                                        cen_prior=cen_prior,
-                                        T_prior=T_prior,
-                                        counts_prior=counts_prior,
-                                        g_prior=g_prior,
-                                        do_pqr=conf['do_pqr'])
-        fitter.go()
+                                                shear_expand=self.shear_expand,
+
+                                                cen_prior=cen_prior,
+                                                T_prior=T_prior,
+                                                counts_prior=counts_prior,
+                                                g_prior=g_prior,
+                                                do_pqr=conf['do_pqr'])
+                fitter.go()
+                break
+            except ValueError as err:
+                print("got value error: %s" % str(err))
 
         self.res[model] = {'fitter':fitter,
                            'res':fitter.get_result()}
@@ -1087,9 +1096,7 @@ class NGMixFitter(FitterBase):
         print_pars(res['pars_err'], front="    err:  ")
         if self.joint_prior is not None:
             linpars=res['pars'].copy()
-            linpars[4] = 10.0**linpars[4]
-            linpars[5] = 10.0**linpars[5]
-            linpars[6] = 10.0**linpars[6]
+            linpars[4:] = 10.0**linpars[4:]
             print_pars(linpars,     front="    linpars: ")
  
         print('        arate:',res['arate'])
@@ -1440,13 +1447,16 @@ def get_g_priors(conf):
             g_prior = ngmix.priors.make_gprior_cosmos_exp()
         elif typ=='cosmos-dev':
             g_prior = ngmix.priors.make_gprior_cosmos_dev()
+        elif typ=='cosmos-sersic':
+            # my fit to the lackner fits
+            g_prior=ngmix.priors.make_gprior_cosmos_sersic(type='erf')
         elif typ =='ba':
             sigma=conf['g_prior_pars'][i]
             g_prior = ngmix.priors.GPriorBA(sigma)
         elif typ is None:
             g_prior = None
         else:
-            raise ValueError("implement gprior '%s'")
+            raise ValueError("implement gprior '%s'" % typ)
         g_priors.append(g_prior)
 
     return g_priors
@@ -1463,6 +1473,8 @@ def get_n_priors(conf):
         if typ =='flat':
             pars=conf['n_prior_pars'][i]
             n_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+        elif typ is None:
+            n_prior=None
         else:
             raise ValueError("implement n prior '%s'")
         n_priors.append(n_prior)
