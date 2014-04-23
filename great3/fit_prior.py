@@ -15,41 +15,13 @@ MIN_COVAR=1.0e-12
 
 S2N_RANGE=[50.0, 1000.0]
 
-def read_field_list(run, model, **keys):
-    """
-    read in results from a deep field
-    """
-    conf=files.read_config(run)
-    s2n_range=keys.get('s2n_range',S2N_RANGE)
-    noshape=keys.get('noshape',False)
-
-    print("s2n_range:",s2n_range)
-    print("noshape:",noshape)
-
-    pars_name='%s_pars' % model
-    s2n_name='%s_s2n_w' % model
-    g_name='%s_g' % model
-
-    field_list=[]
-    for subid in xrange(5):
-        conf['subid']=subid
-        data=files.read_output(**conf)
-
-        g=sqrt( data[g_name][:,0]**2 + data[g_name][:,1]**2 )
-        w,=where(  (data[s2n_name] > s2n_range[0])
-                 & (data[s2n_name] < s2n_range[1])
-                 & (g < 1.0))
-
-        if noshape:
-            pars=data[pars_name][w,4:]
-        else:
-            pars=data[pars_name][w,2:]
-
-        field_list.append(pars)
-
-    return field_list
 
 def fit_joint_run(run, model, **keys):
+    """
+    Fit a joint prior to the fields from the given run
+
+    Calls more generic stuff such as fit_joint_noshape
+    """
     import fitsio
     conf=files.read_config(run)
 
@@ -73,7 +45,8 @@ def fit_joint_run(run, model, **keys):
     print(eps_name)
 
     if keys['noshape']:
-        fit_joint_noshape(usepars,model,
+        fit_joint_noshape(usepars,
+                          model,
                           fname=fits_name,
                           eps=eps_name,
                           **keys)
@@ -86,27 +59,7 @@ def fit_joint_run(run, model, **keys):
                       **keys)
 
 
-def get_par_labels(model, ndim, dolog):
-    if model=='bdf':
-        if dolog:
-            par_labels=_par_labels_bdf_log[ndim]
-        else:
-            raise ValueError("only log for bdf")
-    elif model=='sersic':
-        if dolog:
-            par_labels=_par_labels_sersic_log[ndim]
-        else:
-            raise ValueError("only log for sersic")
-    else:
-        if dolog:
-            par_labels=_par_labels_log[ndim]
-        else:
-            par_labels=_par_labels_lin[ndim]
-
-
-    return par_labels
-
-def fit_joint_noshape(usepars,
+def fit_joint_noshape(pars,
                       model,
                       ngauss=NGAUSS_DEFAULT,
                       n_iter=N_ITER_DEFAULT,
@@ -133,12 +86,12 @@ def fit_joint_noshape(usepars,
     else:
         raise ValueError("no lin pars")
 
-    ndim = usepars.shape[1]
+    ndim = pars.shape[1]
     assert (ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
 
     par_labels=get_par_labels(model, ndim, dolog)
 
-    gmm0=fit_gmix(usepars, ngauss, n_iter, min_covar=min_covar)
+    gmm0=fit_gmix(pars, ngauss, n_iter, min_covar=min_covar)
 
     output=zeros(ngauss, dtype=[('means','f8',ndim),
                                 ('covars','f8',(ndim,ndim)),
@@ -155,8 +108,8 @@ def fit_joint_noshape(usepars,
     # make sure our constructor works
     gmm_plot=make_joint_gmm(gmm0.weights_, gmm0.means_, gmm0.covars_)
 
-    samples=gmm_plot.sample(usepars.shape[0]*100)
-    plot_fits(usepars, samples, eps=eps, par_labels=par_labels, show=show,
+    samples=gmm_plot.sample(pars.shape[0]*100)
+    plot_fits(pars, samples, eps=eps, par_labels=par_labels, show=show,
               dolog=dolog)
 
     if fname is not None:
@@ -864,6 +817,59 @@ class GPriorFitterAlt(GPriorFitterExp):
         print( fmt % self.result )
 
 
+def read_field_list(run, model, **keys):
+    """
+    read in results from a deep field
+    """
+    conf=files.read_config(run)
+    s2n_range=keys.get('s2n_range',S2N_RANGE)
+    noshape=keys.get('noshape',False)
+
+    print("s2n_range:",s2n_range)
+    print("noshape:",noshape)
+
+    pars_name='%s_pars' % model
+    s2n_name='%s_s2n_w' % model
+    g_name='%s_g' % model
+
+    field_list=[]
+    for subid in xrange(5):
+        conf['subid']=subid
+        data=files.read_output(**conf)
+
+        g=sqrt( data[g_name][:,0]**2 + data[g_name][:,1]**2 )
+        w,=where(  (data[s2n_name] > s2n_range[0])
+                 & (data[s2n_name] < s2n_range[1])
+                 & (g < 1.0))
+
+        if noshape:
+            pars=data[pars_name][w,4:]
+        else:
+            pars=data[pars_name][w,2:]
+
+        field_list.append(pars)
+
+    return field_list
+
+def get_par_labels(model, ndim, dolog):
+    if model=='bdf':
+        if dolog:
+            par_labels=_par_labels_bdf_log[ndim]
+        else:
+            raise ValueError("only log for bdf")
+    elif model=='sersic':
+        if dolog:
+            par_labels=_par_labels_sersic_log[ndim]
+        else:
+            raise ValueError("only log for sersic")
+    else:
+        if dolog:
+            par_labels=_par_labels_log[ndim]
+        else:
+            par_labels=_par_labels_lin[ndim]
+
+
+    return par_labels
 
 
 def srandu(num=None):

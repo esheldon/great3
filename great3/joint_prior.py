@@ -34,7 +34,7 @@ def make_joint_prior_simple(type="great3-rgc-exp-hybrid-cosmosg-deep03"):
     """
 
     if type=="great3-rgc-exp-hybrid-cosmosg-deep03":
-         # pretending we can separate out the shape prior
+        # pretending we can separate out the shape prior
         import ngmix
         from ngmix.joint_prior import JointPriorSimpleHybrid
         t=files.read_prior(experiment="real_galaxy",
@@ -50,7 +50,26 @@ def make_joint_prior_simple(type="great3-rgc-exp-hybrid-cosmosg-deep03"):
                                  t['covars'],
                                  g_prior)
 
-       
+    elif type=="great3-rgc-exp-hybrid-cosmosg-deep04":
+        # pretending we can separate out the shape prior
+        # this one used prior on g from cosmos during fitting of
+        # deep fields
+        import ngmix
+        from ngmix.joint_prior import JointPriorSimpleHybrid
+        t=files.read_prior(experiment="real_galaxy",
+                           obs_type="ground",
+                           shear_type="constant",
+                           run="nfit-rgc-deep04",
+                           partype="hybrid",
+                           ext="fits")
+
+        g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+        p=JointPriorSimpleHybrid(t['weights'],
+                                 t['means'],
+                                 t['covars'],
+                                 g_prior)
+
+      
     elif type == "great3-real_galaxy-ground-constant-exp-hybrid-deep03":
         # pretending we can separate out the shape prior
         import ngmix
