@@ -3,9 +3,11 @@ from . import files
 from numpy import array
 
 
-def make_joint_prior_simple(type, cen_width, g_prior_during=False):
+def make_joint_prior_simple(type, cen_width, g_prior_during=True):
     """
     Make a joint prior 
+
+    g_prior_during=False to just use a simple ZDisk2D
     """
 
     if type=="great3-rgc-exp-hybrid-cosmosg-deep03":
@@ -27,11 +29,16 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=False):
                               T_bounds=logT_bounds,
                               F_bounds=logF_bounds)
 
-        g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+        cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
+
+        if g_prior_during:
+            g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+        else:
+            g_prior = ngmix.priors.ZDisk2D(1.0)
+
         p=JointPriorSimpleHybrid(cen_prior,
                                  g_prior,
-                                 TF_prior,
-                                 g_prior_during=g_prior_during)
+                                 TF_prior)
 
     elif type=="great3-rgc-exp-hybrid-cosmosg-deep04":
         raise RuntimeError("adapt to new system")
