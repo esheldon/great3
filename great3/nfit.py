@@ -1368,6 +1368,7 @@ def get_shear(data, model):
 def get_joint_prior(conf):
     import ngmix
     from . import joint_prior
+    raise RuntimeError("adapt to new joint prior system")
 
     jptype = conf.get('joint_prior_type',None)
     if jptype==None:
