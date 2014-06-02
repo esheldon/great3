@@ -25,6 +25,7 @@ class FitterBase(object):
         epoch.
         """
 
+        raise RuntimeError("adapt to Observation based system")
         self.conf=keys
         self._setup_checkpoints()
         self._set_field_data()
