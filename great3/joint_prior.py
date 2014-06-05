@@ -28,10 +28,10 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=False):
                               F_bounds=logF_bounds)
 
         g_prior = ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+        cen_prior = ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
         p=JointPriorSimpleHybrid(cen_prior,
                                  g_prior,
-                                 TF_prior,
-                                 g_prior_during=g_prior_during)
+                                 TF_prior)
 
     elif type=="great3-rgc-exp-hybrid-cosmosg-deep04":
         raise RuntimeError("adapt to new system")
