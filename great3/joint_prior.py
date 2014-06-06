@@ -3,7 +3,7 @@ from . import files
 from numpy import array
 
 
-def make_joint_prior_simple(type, cen_width, g_prior_during=True):
+def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds=True):
     """
     Make a joint prior 
 
@@ -21,8 +21,14 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True):
                            partype="hybrid",
                            ext="fits")
 
-        logT_bounds=[-1.5, 0.5]
-        logF_bounds=[-0.7, 1.5]
+        if with_TF_bounds:
+            print("using TF bounds")
+            logT_bounds=[-1.5, 0.5]
+            logF_bounds=[-0.7, 1.5]
+        else:
+            print("without TF bounds")
+            logT_bounds=None
+            logF_bounds=None
         TF_prior=JointPriorTF(t['weights'],
                               t['means'],
                               t['covars'],
