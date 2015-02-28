@@ -31,11 +31,22 @@ def read_config(run):
     return yaml.load(open(fname))
 
 
-def get_dir():
+def get_dir(**keys):
     """
+    get my great3 run dir
+
+    parameters
+    ----------
+    great3run: string
+        One of my great3 runs, e.g. run01
+
     The GREAT3_DATA_DIR environment variable must be set
     """
+
+    great3run=keys['great3run']
     d=os.environ['GREAT3_DATA_DIR']
+
+    d=os.path.join(d,great3run,'data')
     return d
 
 def get_branch_dir(**keys):
@@ -45,6 +56,8 @@ def get_branch_dir(**keys):
 
     parameters
     ----------
+    great3run: string
+        One of my great3 runs, e.g. run01
     experiment: string
         Required keyword.  e.g. control, real
     obs_type: string
@@ -52,7 +65,7 @@ def get_branch_dir(**keys):
     shear_type: string
         Required keyword.  e.g. constant
     """
-    d=get_dir()
+    d=get_dir(**keys)
 
     experiment=keys['experiment']
     obs_type=keys['obs_type']
@@ -65,6 +78,8 @@ def get_file(**keys):
     """
     parameters
     ----------
+    great3run: string
+        One of my great3 runs, e.g. run01
     experiment: string
         Required keyword.  e.g. control, real
     obs_type: string
@@ -147,6 +162,19 @@ def read_star_cat(**keys):
 def get_gal_image_file(**keys):
     """
     Same parameters as get_file but ftype is set to 'image'
+
+    great3run: string
+        One of my great3 runs, e.g. run01
+    experiment: string
+        Required keyword.  e.g. control, real
+    obs_type: string
+        Required keyword. e.g. ground, space
+    shear_type: string
+        Required keyword.  e.g. constant
+    subid: number
+        Requird keyword. e.g. 12
+    epoch: number
+        Optional keyword.  Default 0 for image types, none for catalogs.
     """
     d=get_branch_dir(**keys)
 
