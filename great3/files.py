@@ -46,7 +46,8 @@ def get_dir(**keys):
     great3run=keys['great3run']
     d=os.environ['GREAT3_DATA_DIR']
 
-    d=os.path.join(d,great3run,'data')
+    #d=os.path.join(d,great3run,'data')
+    d=os.path.join(d,great3run,'data','public')
     return d
 
 def get_branch_dir(**keys):
@@ -321,18 +322,23 @@ def read_deep_star_image(**keys):
     data=fitsio.read(fname)
     return data
 
-def get_skynoise_dir():
+def get_skynoise_dir(**keys):
     """
     Get the directory holding the sky noise estimates
+
+    parameters
+    ----------
+    great3run: string
+        One of my great3 runs, e.g. run01
     """
-    d = get_dir()
+    d = get_dir(**keys)
     return os.path.join(d, 'skynoise')
 
 def get_skynoise_file(**keys):
     """
     Get the file holding the sky noise estimates for each subfield
     """
-    d=get_skynoise_dir()
+    d=get_skynoise_dir(**keys)
 
     fname='%(experiment)s-%(obs_type)s-%(shear_type)s-skynoise.fits'
     fname = fname % keys
@@ -372,11 +378,11 @@ def read_deep_skynoise(**keys):
     return fitsio.read(fname)
 
 
-def get_skynoise_plot_dir():
+def get_skynoise_plot_dir(**keys):
     """
     dir to hold plots
     """
-    d=get_skynoise_dir()
+    d=get_skynoise_dir(**keys)
     plot_dir=os.path.join(d, 'plots')
     return plot_dir
 
@@ -385,7 +391,7 @@ def get_skynoise_plot_file(**keys):
     A plot of the fit
     """
 
-    d=get_skynoise_plot_dir()
+    d=get_skynoise_plot_dir(**keys)
 
     fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)03d-skynoise.eps'
     fname = fname % keys
@@ -410,7 +416,8 @@ def get_run_dir(**keys):
     """
     Get the directory holding the run
     """
-    d = get_dir()
+    d=os.environ['GREAT3_DATA_DIR']
+    run=keys['run']
     return os.path.join(d, 'processing', keys['run'])
 
 def get_output_dir(**keys):

@@ -30,7 +30,7 @@ def calc_branch_sky_noise(**keys):
 
 
     print("will write to:",outfile)
-    d=files.get_skynoise_plot_dir()
+    d=files.get_skynoise_plot_dir(**keys)
     if not os.path.exists(d):
         os.makedirs(d)
 
@@ -49,7 +49,7 @@ def calc_branch_sky_noise(**keys):
 
         gf = get_sky_noise(im,fmin,fmax,binsize)
         res=gf.get_result()
-        plt=gf.make_plot()
+        plt=gf.make_plot(show=False)
 
         print("    writing:",plot_file)
         plt.write_eps(plot_file)

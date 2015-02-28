@@ -18,7 +18,7 @@ class PSFFailure(Exception):
 class NGMixFitter(FitterBase):
     def _process_object(self, sub_index):
         """
-        run B&A fitting
+        run fitting
         """
         self.res={'flags':0}
 
