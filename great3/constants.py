@@ -1,5 +1,5 @@
 # arcsec/pixel
-PIXEL_SCALE=0.2
+#PIXEL_SCALE=0.2
 
 NGAL_PER_SUBFIELD=10000
 
@@ -18,6 +18,15 @@ BIG_PDEFVAL =  9.999e9
 # but most likely they will have their more specific flag fields
 
 PSF_FIT_FAILURE=2**0
+
+# for different models. In the code w just set
+# 2**(imodel+1)
+GAL_FIT_FAILURE1=2**1
+GAL_FIT_FAILURE2=2**2
+GAL_FIT_FAILURE3=2**3
+GAL_FIT_FAILURE4=2**4
+GAL_FIT_FAILURE5=2**5
+
 NO_ATTEMPT=2**30
 
 # for regauss

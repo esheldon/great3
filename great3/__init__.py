@@ -4,6 +4,7 @@ from . import constants
 from . import skynoise
 from . import rg
 from . import nfit
+from . import sfit
 from . import shapenoise
 
 from . import fit_prior

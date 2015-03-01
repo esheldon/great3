@@ -3,16 +3,14 @@ import numpy
 from numpy import sqrt, array, zeros, log10, where
 from numpy.random import random as randu
 from pprint import pprint
+import ngmix
+from ngmix import Observation, DiagonalJacobian
 
 from . import files
 from .generic import *
 from .constants import *
+from .bootstrapper import Bootstrapper
 
-class PSFFailure(Exception):
-    def __init__(self, value):
-         self.value = value
-    def __str__(self):
-        return repr(self.value)
 
 
 class NGMixFitter(FitterBase):
@@ -142,7 +140,6 @@ class NGMixFitter(FitterBase):
 
         cen is the global cen not within jacobian
         """
-        import ngmix
         from ngmix.gexceptions import GMixMaxIterEM, GMixRangeError
         conf=self.conf
 
@@ -174,7 +171,6 @@ class NGMixFitter(FitterBase):
                                    sky,
                                    guess,
                                    jacob):
-        import ngmix
 
         ntry,maxiter,tol = self._get_em_pars()
 
@@ -199,7 +195,6 @@ class NGMixFitter(FitterBase):
             return self._get_em_guess_ngauss(sigma,ngauss)
 
     def _get_em_guess_1gauss(self, sigma):
-        import ngmix
 
         sigma2 = sigma**2
         pars=array( [1.0 + 0.1*srandu(),
@@ -212,7 +207,6 @@ class NGMixFitter(FitterBase):
         return ngmix.gmix.GMix(pars=pars)
 
     def _get_em_guess_2gauss(self, sigma):
-        import ngmix
 
         sigma2 = sigma**2
 
@@ -234,7 +228,6 @@ class NGMixFitter(FitterBase):
         return ngmix.gmix.GMix(pars=pars)
 
     def _get_em_guess_3gauss(self, sigma):
-        import ngmix
 
         sigma2 = sigma**2
 
@@ -268,7 +261,6 @@ class NGMixFitter(FitterBase):
 
 
     def _get_em_guess_ngauss(self, sigma, ngauss):
-        import ngmix
 
         sigma2 = sigma**2
 
@@ -431,7 +423,6 @@ class NGMixFitter(FitterBase):
         Fit the flux from a fixed gmix model.  This is linear and always
         succeeds.
         """
-        import ngmix
 
         fitter=ngmix.fitting.PSFFluxFitter(image,
                                            weight_image,
@@ -453,7 +444,7 @@ class NGMixFitter(FitterBase):
         Run through and fit all the models
         """
 
-        for model in self.fit_models:
+        for model in self.conf['model_pars']:
             print('    fitting:',model)
 
             if model=='bdf':
@@ -472,7 +463,6 @@ class NGMixFitter(FitterBase):
         """
         Fit a sersic model, taking guesses from our previous em fits
         """
-        import ngmix
         from ngmix.fitting import print_pars
 
         if self.joint_prior is not None:
@@ -528,7 +518,6 @@ class NGMixFitter(FitterBase):
         previous em fits
         """
 
-        import ngmix
         from ngmix.fitting import print_pars
 
         print("    Sersic Joint")
@@ -585,7 +574,6 @@ class NGMixFitter(FitterBase):
         Fit the simple model, taking guesses from our
         previous em fits
         """
-        import ngmix
 
         if self.joint_prior is not None:
             return self._fit_simple_joint(model)
@@ -642,7 +630,6 @@ class NGMixFitter(FitterBase):
         Fit the simple model, taking guesses from our
         previous em fits
         """
-        import ngmix
         from ngmix.fitting import MCMCSimpleJointHybrid
 
         cen_prior=self.cen_prior
@@ -890,7 +877,6 @@ class NGMixFitter(FitterBase):
         Fit the simple model, taking guesses from our
         previous em fits
         """
-        import ngmix
 
         if self.joint_prior is not None:
             return self._fit_bdf_joint()
@@ -984,7 +970,6 @@ class NGMixFitter(FitterBase):
         Fit the bdf model using joint prior, taking guesses from our previous
         em fits
         """
-        import ngmix
         from ngmix.fitting import MCMCBDFJointHybrid
 
         cen_prior=self.cen_prior
@@ -1090,17 +1075,18 @@ class NGMixFitter(FitterBase):
 
     def _print_galaxy_res(self, model):
         from ngmix.fitting import print_pars
+
+        print("    model:",model)
         res=self.res[model]['res']
-
-        print_pars(res['pars'],     front="    pars: ")
-        print_pars(res['pars_err'], front="    err:  ")
-        if self.joint_prior is not None:
-            linpars=res['pars'].copy()
-            linpars[4:] = 10.0**linpars[4:]
-            print_pars(linpars,     front="    linpars: ")
+        print_pars(res['pars'],     front="        pars: ")
+        print_pars(res['pars_err'], front="        err:  ")
  
-        print('        arate:',res['arate'])
+        mess='        s/n: %(s2n_w).1f chi2per: %(chi2per).2f'
+        if 'arate' in res:
+            mess='%s arate: %(arate).2f'
 
+        mess=mess % res
+        print(mess)
 
     def _finish_setup(self):
         """
@@ -1108,7 +1094,6 @@ class NGMixFitter(FitterBase):
         """
 
         conf=self.conf
-        self.fit_models=conf['fit_models']
         self.make_plots = conf['make_plots']
         if self.make_plots:
             print("will make plots!")
@@ -1120,61 +1105,41 @@ class NGMixFitter(FitterBase):
         """
         Get a simple jacobian at the specified location
         """
-        import ngmix
 
-        j = ngmix.jacobian.Jacobian(cen[0],
-                                    cen[1],
-                                    PIXEL_SCALE,
-                                    0.0,
-                                    0.0,
-                                    PIXEL_SCALE)
+        pixel_scale=self.conf['pixel_scale']
+        j = DiagonalJacobian(cen[0], cen[1], scale=pixel_scale)
         return j
 
     def _unpack_priors(self):
         conf=self.conf
 
-        nmod=len(self.fit_models)
+        model_pars=conf['model_pars']
+        nmod=len(model_pars)
 
-        self.cen_prior=get_cen_prior(conf)
-        self.joint_prior=get_joint_prior(conf)
 
-        if self.joint_prior is not None:
-            self.priors=None
-        else:
-            T_priors=get_T_priors(conf)
-            counts_priors=get_counts_priors(conf)
-            g_priors=get_g_priors(conf)
-            n_priors=get_n_priors(conf)
+        priors={}
+        for model in model_pars:
+            mpars=model_pars[model]
 
-            if (len(T_priors) != nmod
-                    or len(counts_priors) != nmod
-                    or len(n_priors) != nmod
-                    or len(g_priors) != nmod):
-                raise ValueError("models and T,counts,g priors must be same length")
+            cen_prior=get_cen_prior(mpars['cen_prior_type'],
+                                    pars=mpars['cen_prior_pars'])
 
-            priors={}
-            for i in xrange(nmod):
-                model=self.fit_models[i]
+            g_prior=get_g_prior(mpars['g_prior_type'],
+                                pars=mpars['g_prior_pars'])
+            T_prior=get_T_prior(mpars['T_prior_type'],
+                                pars=mpars['T_prior_pars'])
+            counts_prior=get_counts_prior(mpars['counts_prior_type'],
+                                          pars=mpars['counts_prior_pars'])
+            
+            prior=ngmix.joint_prior.PriorSimpleSep(cen_prior,
+                                                   g_prior,
+                                                   T_prior,
+                                                   counts_prior)
 
-                T_prior=T_priors[i]
 
-                # note it is a list
-                counts_prior=counts_priors[i]
+            priors[model] = prior
 
-                g_prior=g_priors[i]
-                n_prior=n_priors[i]
-                
-                modlist={'T':T_prior, 'counts':counts_prior, 'g':g_prior, 'n':n_prior}
-                priors[model] = modlist
-
-            self.priors=priors
-
-            # bulge+disk fixed size ratio
-            self.bfrac_prior=get_bfrac_prior(conf)
-
-    def _print_res(self, res):
-        pass
-
+        self.priors=priors
 
     def _copy_to_output(self, sub_index, res):
         """
@@ -1194,11 +1159,11 @@ class NGMixFitter(FitterBase):
             self._copy_psf_to_output(res['psf_gmix'],sub_index)
 
             # em fit to convolved galaxy
-            data['em_gauss_flux'][sub_index] = res['em_gauss_flux']
-            data['em_gauss_flux_err'][sub_index] = res['em_gauss_flux_err']
-            data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
+            #data['em_gauss_flux'][sub_index] = res['em_gauss_flux']
+            #data['em_gauss_flux_err'][sub_index] = res['em_gauss_flux_err']
+            #data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
 
-            for model in self.fit_models:
+            for model in self.conf['model_pars']:
                 self._copy_pars(sub_index, model, res)
 
     def _copy_pars(self, sub_index, model, allres):
@@ -1228,14 +1193,17 @@ class NGMixFitter(FitterBase):
         self.data[n['g']][sub_index,:] = res['g']
         self.data[n['g_cov']][sub_index,:,:] = res['g_cov']
 
-        self.data[n['arate']][sub_index] = res['arate']
-        self.data[n['tau']][sub_index] = res['tau']
+        if 'arate' in res:
+            self.data[n['arate']][sub_index] = res['arate']
+            self.data[n['tau']][sub_index] = res['tau']
 
         for sn in _stat_names:
             if sn in res:
                 self.data[n[sn]][sub_index] = res[sn]
 
-        if conf['do_pqr']:
+        if conf['do_shear']:
+            self.data[n['g_sens']][sub_index,:] = res['g_sens']
+
             self.data[n['P']][sub_index] = res['P']
             self.data[n['Q']][sub_index,:] = res['Q']
             self.data[n['R']][sub_index,:,:] = res['R']
@@ -1256,10 +1224,13 @@ class NGMixFitter(FitterBase):
         """
         copy some psf info
         """
-        pars=gmix.get_full_pars()
-        self.data['psf_pars'][sub_index,:] = pars
+        g1,g2,T=gmix.get_g1g2T()
 
-    def _get_model_npars(self, model):
+        self.data['psf_g'][sub_index,0] = g1
+        self.data['psf_g'][sub_index,1] = g2
+        self.data['psf_T'][sub_index] = T
+
+    def _get_model_numpars(self, model):
         """
         Get the models and number of parameters
         """
@@ -1277,21 +1248,9 @@ class NGMixFitter(FitterBase):
 
         dt = self._get_default_dtype()
 
-        psf_model=conf['psf_model']
-        if 'em' in psf_model:
-            ngauss=get_em_ngauss(psf_model)
-            dt += [('psf_pars','f8',ngauss*6)]
-        else:
-            raise ValueError("unsupported psf model: '%s'" % psf_model)
-
-        n=get_model_names('em_gauss')
-        dt += [(n['flux'],    'f8'),
-               (n['flux_err'],'f8'),
-               (n['cen'],'f8',2)]
-
-        models=self.fit_models
-        for model in models:
-            np = self._get_model_npars(model)
+        model_pars=self.conf['model_pars']
+        for model in model_pars:
+            np = self._get_model_numpars(model)
 
             n=get_model_names(model)
 
@@ -1312,8 +1271,9 @@ class NGMixFitter(FitterBase):
                  (n['tau'],'f8'),
                 ]
 
-            if conf['do_pqr']:
-                dt += [(n['P'], 'f8'),
+            if conf['do_shear']:
+                dt += [(n['g_sens'],'f8',2),
+                       (n['P'], 'f8'),
                        (n['Q'], 'f8', 2),
                        (n['R'], 'f8', (2,2))]
 
@@ -1321,12 +1281,11 @@ class NGMixFitter(FitterBase):
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        data['psf_pars'] = DEFVAL
-        data['em_gauss_flux'] = DEFVAL
-        data['em_gauss_flux_err'] = PDEFVAL
-        data['em_gauss_cen'] = DEFVAL
+        #data['em_gauss_flux'] = DEFVAL
+        #data['em_gauss_flux_err'] = PDEFVAL
+        #data['em_gauss_cen'] = DEFVAL
 
-        for model in self.fit_models:
+        for model in model_pars:
             n=get_model_names(model)
 
             data[n['flags']] = NO_ATTEMPT
@@ -1345,7 +1304,8 @@ class NGMixFitter(FitterBase):
 
             data[n['tau']] = BIG_PDEFVAL
 
-            if conf['do_pqr']:
+            if conf['do_shear']:
+                data[n['g_sens']] = DEFVAL
                 data[n['P']] = DEFVAL
                 data[n['Q']] = DEFVAL
                 data[n['R']] = DEFVAL
@@ -1366,7 +1326,6 @@ def get_shear(data, model):
     return res
 
 def get_joint_prior(conf):
-    import ngmix
     from . import joint_prior
     raise RuntimeError("adapt to new joint prior system")
 
@@ -1382,88 +1341,62 @@ def get_joint_prior(conf):
 
     return jp
 
-def get_T_priors(conf):
-    import ngmix
+def get_T_prior(typ, pars=None):
 
-    T_prior_types=conf.get('T_prior_types',None)
-    if T_prior_types is None:
-        return None
+    if typ == 'flat':
+        T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+    elif typ =='lognormal':
+        T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
+    elif typ =='normal':
+        T_prior=ngmix.priors.Normal(pars[0], pars[1])
+    elif typ=="cosmos_exp":
+        T_prior=ngmix.priors.TPriorCosmosExp()
+    elif typ=="cosmos_dev":
+        T_prior=ngmix.priors.TPriorCosmosDev()
+    else:
+        raise ValueError("bad T prior type: %s" % T_prior_type)
 
-    T_priors=[]
-    for i,typ in enumerate(T_prior_types):
-        if typ == 'flat':
-            pars=conf['T_prior_pars'][i]
-            T_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
-        elif typ =='lognormal':
-            pars=conf['T_prior_pars'][i]
-            T_prior=ngmix.priors.LogNormal(pars[0], pars[1])
-        elif typ=="cosmos_exp":
-            T_prior=ngmix.priors.TPriorCosmosExp()
-        elif typ=="cosmos_dev":
-            T_prior=ngmix.priors.TPriorCosmosDev()
-        else:
-            raise ValueError("bad T prior type: %s" % T_prior_type)
+    return T_prior
 
-        T_priors.append(T_prior)
+def get_counts_prior(typ, pars=None):
 
-    return T_priors
+    if typ == 'flat':
+        counts_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
+    else:
+        raise ValueError("bad counts prior type: %s" % counts_prior_type)
 
-def get_counts_priors(conf):
-    import ngmix
 
-    counts_prior_types=conf.get('counts_prior_types',None)
-    if counts_prior_types is None:
-        return None
-
-    counts_priors=[]
-    for i,typ in enumerate(counts_prior_types):
-        if typ == 'flat':
-            pars=conf['counts_prior_pars'][i]
-            counts_prior=ngmix.priors.FlatPrior(pars[0], pars[1])
-        else:
-            raise ValueError("bad counts prior type: %s" % counts_prior_type)
-
-        counts_priors.append(counts_prior)
-
-    return counts_priors
+    return counts_prior
 
 
 
-def get_g_priors(conf):
-    import ngmix
-    g_prior_types=conf.get('g_prior_types',None)
+def get_g_prior(typ, pars=None):
 
-    if g_prior_types is None:
-        return None
+    if typ =='exp':
+        parr=array(pars,dtype='f8')
+        g_prior = ngmix.priors.GPriorM(parr)
+    elif typ=='cosmos-galfit':
+        g_prior = ngmix.priors.make_gprior_cosmos_galfit()
+    elif typ=='cosmos-exp':
+        g_prior = ngmix.priors.make_gprior_cosmos_exp()
+    elif typ=='cosmos-dev':
+        g_prior = ngmix.priors.make_gprior_cosmos_dev()
+    elif typ=='cosmos-sersic':
+        # my fit to the lackner fits
+        g_prior=ngmix.priors.make_gprior_cosmos_sersic(type='erf')
+    elif typ =='ba':
+        sigma=pars[0]
+        g_prior = ngmix.priors.GPriorBA(sigma)
+    elif typ == "flat":
+        g_prior = ngmix.priors.ZDisk2D(pars[0])
+    elif typ is None:
+        g_prior = None
+    else:
+        raise ValueError("implement gprior '%s'" % typ)
 
-    g_priors=[]
-    for i,typ in enumerate(g_prior_types):
-        if typ =='exp':
-            pars=conf['g_prior_pars'][i]
-            parr=array(pars,dtype='f8')
-            g_prior = ngmix.priors.GPriorM(parr)
-        elif typ=='cosmos-galfit':
-            g_prior = ngmix.priors.make_gprior_cosmos_galfit()
-        elif typ=='cosmos-exp':
-            g_prior = ngmix.priors.make_gprior_cosmos_exp()
-        elif typ=='cosmos-dev':
-            g_prior = ngmix.priors.make_gprior_cosmos_dev()
-        elif typ=='cosmos-sersic':
-            # my fit to the lackner fits
-            g_prior=ngmix.priors.make_gprior_cosmos_sersic(type='erf')
-        elif typ =='ba':
-            sigma=conf['g_prior_pars'][i]
-            g_prior = ngmix.priors.GPriorBA(sigma)
-        elif typ is None:
-            g_prior = None
-        else:
-            raise ValueError("implement gprior '%s'" % typ)
-        g_priors.append(g_prior)
-
-    return g_priors
+    return g_prior
 
 def get_n_priors(conf):
-    import ngmix
     n_prior_types=conf.get('n_prior_types',None)
 
     if n_prior_types is None:
@@ -1484,21 +1417,19 @@ def get_n_priors(conf):
 
 
 
-def get_cen_prior(conf):
-    import ngmix
-    use_cen_prior=conf.get('use_cen_prior',False)
-    if use_cen_prior:
-        width=conf.get('cen_width',1.0)
+def get_cen_prior(type, pars=None):
+
+    if type=='dgauss':
+        width=pars[0]
         return ngmix.priors.CenPrior(0.0, 0.0, width,width)
     else:
-        return None
+        raise ValueError("bad cen prior: '%s'" % type)
 
 def get_bfrac_prior(conf):
     
     bptype = conf.get('bfrac_prior_type',None)
 
     if bptype == 'default':
-        import ngmix
         # use the miller and im3shape style
         bfrac_prior=ngmix.priors.BFrac()
     elif bptype ==None:
@@ -1557,7 +1488,6 @@ def get_shape_guess(g1, g2, n, width=0.01):
     """
     Get guess, making sure in range
     """
-    import ngmix
     from ngmix.gexceptions import GMixRangeError
 
     gtot = sqrt(g1**2 + g2**2)

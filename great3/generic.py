@@ -10,6 +10,17 @@ from . import files
 from .containers import Field, DeepField
 from .constants import *
 
+class PSFFailure(Exception):
+    def __init__(self, value):
+         self.value = value
+    def __str__(self):
+        return repr(self.value)
+class GalFailure(Exception):
+    def __init__(self, value):
+         self.value = value
+    def __str__(self):
+        return repr(self.value)
+
 class FitterBase(object):
     def __init__(self, **keys):
         """
@@ -25,7 +36,6 @@ class FitterBase(object):
         epoch.
         """
 
-        raise RuntimeError("adapt to Observation based system")
         self.conf=keys
         self._setup_checkpoints()
         self._set_field_data()
@@ -221,8 +231,8 @@ class FitterBase(object):
         dt=[('id','i8'),
             ('processed','i2'),
             ('flags','i4'),
-            ('psf_em1_g','f8',2), # always fit 1 gauss with em to psf
-            ('psf_em1_T','f8')]
+            ('psf_g','f8',2), # always fit 1 gauss with em to psf
+            ('psf_T','f8')]
 
         return dt
 

@@ -54,7 +54,16 @@ def get_obj_range(options):
 def run(conf):
 
 
-    if 'nfit' in conf['run']:
+    if 'fitter_class' in conf:
+        if conf['fitter_class']=='sfit':
+            if conf['fitter_type'] == 'maxlike':
+                fitter=great3.sfit.LMFitter(**conf)
+            else:
+                raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
+        else:
+            raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
+
+    elif 'nfit' in conf['run']:
         fitter=great3.nfit.NGMixFitter(**conf)
     elif 'rg' in conf['run']:
         fitter=great3.rg.RGFitter(**conf)
