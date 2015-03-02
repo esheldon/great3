@@ -36,6 +36,10 @@ class LMFitter(NGMixFitter):
         # this is a copy
         self.res['psf_gmix'] = boot.psf_obs.get_gmix()
 
+
+        if self.make_plots:
+            self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
+
         max_pars=self.conf['max_pars']
         for model in self.conf['model_pars']:
             try:
@@ -91,5 +95,104 @@ class LMFitter(NGMixFitter):
         self.gal_obs=Observation(gal_image,
                                  weight=weight_image,
                                  jacobian=gal_jacob)
+
+
+class ISampleFitter(LMFitter):
+    def _dofits(self):
+
+        boot=Bootstrapper(self.psf_obs,
+                          self.gal_obs,
+                          use_logpars=True)
+
+        sigma_guess=self.conf['psf_fwhm_guess']/2.35
+        Tguess=2*sigma_guess**2
+        boot.fit_psf(self.conf['psf_model'],
+                     Tguess=Tguess,
+                     ntry=self.conf['psf_ntry'])
+
+        # this is a copy
+        self.res['psf_gmix'] = boot.psf_obs.get_gmix()
+
+
+        if self.make_plots:
+            self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
+
+        max_pars=self.conf['max_pars']
+        ipars=self.conf['isample_pars']
+        for model in self.conf['model_pars']:
+            try:
+
+                prior=self.priors[model]
+                boot.fit_max(model,
+                             max_pars,
+                             prior=prior,
+                             ntry=max_pars['ntry'])
+
+                boot.isample(model,
+                             ipars,
+                             prior=prior)
+
+                sampler=boot.get_isampler()
+                max_fitter=boot.get_max_fitter()
+                self._add_shear_info(sampler, max_fitter, model)
+
+                self.res[model] = {'fitter':sampler,
+                                   'res':sampler.get_result()}
+                
+                self._print_galaxy_res(model)
+
+                if self.make_plots:
+                    self._do_gal_plots(model, fitter)
+
+            except GalFailure:
+                print("failed to fit galaxy with model: %s" % model)
+                self.res['flags'] = 2**(i+1)
+
+    def _add_shear_info(self, sampler, max_fitter, model):
+        """
+        lensfit and pqr
+
+        calc result *before* calling this method
+        """
+
+        # this is the full prior
+        prior=self.priors[model]
+        g_prior=prior.g_prior
+
+        iweights = sampler.get_iweights()
+        samples = sampler.get_samples()
+        g_vals=samples[:,2:2+2]
+
+        res=sampler.get_result()
+
+        # keep for later if we want to make plots
+        self.weights=iweights
+
+        # we are going to mutate the result dict owned by the sampler
+        stats = max_fitter.get_fit_stats(res['pars'])
+        res.update(stats)
+
+        ls=ngmix.lensfit.LensfitSensitivity(g_vals,
+                                            g_prior,
+                                            weights=iweights,
+                                            remove_prior=True)
+        g_sens = ls.get_g_sens()
+        g_mean = ls.get_g_mean()
+
+        res['g_sens'] = g_sens
+        res['nuse'] = ls.get_nuse()
+
+        # not able to use extra weights yet
+        '''
+        pqrobj=ngmix.pqr.PQR(g, g_prior,
+                             shear_expand=self.shear_expand,
+                             remove_prior=remove_prior)
+
+
+        P,Q,R = pqrobj.get_pqr()
+        res['P']=P
+        res['Q']=Q
+        res['R']=R
+        '''
 
 

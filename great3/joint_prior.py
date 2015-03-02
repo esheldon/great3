@@ -2,6 +2,9 @@ from __future__ import print_function
 from . import files
 from numpy import array
 
+import ngmix
+from ngmix.joint_prior import JointPriorTF, JointPriorSimpleHybrid
+
 
 def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds=True):
     """
@@ -10,10 +13,38 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
     g_prior_during=False to just use a simple ZDisk2D
     """
 
-    if type=="great3-rgc-exp-hybrid-cosmosg-deep03":
+    if type=='g301-rgc-deep01':
+        """
+
+        this GPriorGreatDES is very noisy for recovering shear, might want to
+        use essentially *anything* else, even BA (should test in my sims)
+
+        """
+
+        t=files.read_prior(experiment="real_galaxy",
+                            obs_type="ground",
+                            shear_type="constant",
+                            run="g301-rgc-deep01",
+                            partype="hybrid",
+                            ext="fits")
+
+        TF_prior=JointPriorTF(t['weights'],
+                              t['means'],
+                              t['covars'])
+
+        cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
+
+        if g_prior_during:
+            g_prior_pars = [1.0, 4303.78, 0.0666206, 0.607922]
+            g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
+        else:
+            g_prior = ngmix.priors.ZDisk2D(1.0)
+
+        p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
+
+       
+    elif type=="great3-rgc-exp-hybrid-cosmosg-deep03":
         # pretending we can separate out the shape prior
-        import ngmix
-        from ngmix.joint_prior import JointPriorTF,JointPriorSimpleHybrid
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
                            shear_type="constant",
@@ -51,8 +82,6 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
         # pretending we can separate out the shape prior
         # this one used prior on g from cosmos during fitting of
         # deep fields
-        import ngmix
-        from ngmix.joint_prior import JointPriorSimpleHybrid
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
                            shear_type="constant",
@@ -70,8 +99,6 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
     elif type == "great3-real_galaxy-ground-constant-exp-hybrid-deep03":
         raise RuntimeError("adapt to new system")
         # pretending we can separate out the shape prior
-        import ngmix
-        from ngmix.joint_prior import JointPriorSimpleHybrid
         t=files.read_prior(experiment="real_galaxy",
                            obs_type="ground",
                            shear_type="constant",
@@ -131,7 +158,6 @@ def make_joint_prior_sersic(type="great3-cgc-sersic-hybrid-deep01"):
     if type=="great3-cgc-sersic-hybrid-deep01":
 
         # pretending we can separate out the shape prior
-        import ngmix
         from ngmix.joint_prior import JointPriorSersicHybrid
         t=files.read_prior(experiment="control",
                            obs_type="ground",

@@ -7,6 +7,7 @@ import ngmix
 from ngmix import Observation, DiagonalJacobian
 
 from . import files
+from . import joint_prior
 from .generic import *
 from .constants import *
 from .bootstrapper import Bootstrapper
@@ -297,9 +298,13 @@ class NGMixFitter(FitterBase):
         """
         import images
 
-        model_image = fitter.make_image(counts=self.psf_image.sum())
+        psf_image=self.psf_obs.image
 
-        plt=images.compare_images(self.psf_image,
+        gmix=fitter.get_gmix()
+        model_image=gmix.make_image(psf_image.shape,
+                                    jacobian=self.psf_obs.jacobian)
+
+        plt=images.compare_images(psf_image,
                                   model_image,
                                   label1='psf',
                                   label2=self.conf['psf_model'],
@@ -314,7 +319,8 @@ class NGMixFitter(FitterBase):
         Make residual plot and trials plot
         """
         self._compare_gal(model, fitter)
-        self._make_trials_plot(model, fitter)
+        if hasattr(fitter,'make_plots'):
+            self._make_trials_plot(model, fitter)
 
     def _make_trials_plot(self, model, fitter):
         """
@@ -347,10 +353,11 @@ class NGMixFitter(FitterBase):
         psf_gmix = res['psf_gmix']
         gmix_conv = gmix.convolve(psf_gmix)
 
-        model_image = gmix_conv.make_image(self.gal_image.shape,
-                                           jacobian=res['jacob'])
+        gal_image=self.gal_obs.image
+        model_image = gmix_conv.make_image(gal_image.shape,
+                                           jacobian=self.gal_obs.jacobian)
 
-        plt=images.compare_images(self.gal_image,
+        plt=images.compare_images(gal_image,
                                   model_image,
                                   label1='galaxy',
                                   label2=model,
@@ -1121,20 +1128,25 @@ class NGMixFitter(FitterBase):
         for model in model_pars:
             mpars=model_pars[model]
 
-            cen_prior=get_cen_prior(mpars['cen_prior_type'],
-                                    pars=mpars['cen_prior_pars'])
+            if 'joint_prior' in mpars:
+                jp=mpars['joint_prior']
+                cen_width=jp['cen_prior_pars'][0]
+                prior=joint_prior.make_joint_prior_simple(jp['name'], cen_width)
+            else:
+                cen_prior=get_cen_prior(mpars['cen_prior_type'],
+                                        pars=mpars['cen_prior_pars'])
 
-            g_prior=get_g_prior(mpars['g_prior_type'],
-                                pars=mpars['g_prior_pars'])
-            T_prior=get_T_prior(mpars['T_prior_type'],
-                                pars=mpars['T_prior_pars'])
-            counts_prior=get_counts_prior(mpars['counts_prior_type'],
-                                          pars=mpars['counts_prior_pars'])
-            
-            prior=ngmix.joint_prior.PriorSimpleSep(cen_prior,
-                                                   g_prior,
-                                                   T_prior,
-                                                   counts_prior)
+                g_prior=get_g_prior(mpars['g_prior_type'],
+                                    pars=mpars['g_prior_pars'])
+                T_prior=get_T_prior(mpars['T_prior_type'],
+                                    pars=mpars['T_prior_pars'])
+                counts_prior=get_counts_prior(mpars['counts_prior_type'],
+                                              pars=mpars['counts_prior_pars'])
+                
+                prior=ngmix.joint_prior.PriorSimpleSep(cen_prior,
+                                                       g_prior,
+                                                       T_prior,
+                                                       counts_prior)
 
 
             priors[model] = prior
@@ -1174,39 +1186,47 @@ class NGMixFitter(FitterBase):
         conf=self.conf
         res = allres[model]['res']
 
-        n=get_model_names(model)
+        n=Namer(model)
 
         pars=res['pars']
         pars_cov=res['pars_cov']
 
+        # assuming log(T) and log(F)
+        T = pars[4]
+        T_s2n = sqrt(1.0/pars_cov[4,4])
+
         flux=pars[5:].sum()
-        flux_err=sqrt( pars_cov[5:, 5:].sum() )
+        flux_s2n=sqrt(1.0/pars_cov[5:, 5:].sum() )
 
-        self.data[n['flags']][sub_index] = res['flags']
+        self.data[n('flags')][sub_index] = res['flags']
 
-        self.data[n['pars']][sub_index,:] = pars
-        self.data[n['pars_cov']][sub_index,:,:] = pars_cov
+        self.data[n('pars')][sub_index,:] = pars
+        self.data[n('pars_cov')][sub_index,:,:] = pars_cov
 
-        self.data[n['flux']][sub_index] = flux
-        self.data[n['flux_err']][sub_index] = flux_err
+        self.data[n('flux')][sub_index] = flux
+        self.data[n('flux_s2n')][sub_index] = flux_s2n
 
-        self.data[n['g']][sub_index,:] = res['g']
-        self.data[n['g_cov']][sub_index,:,:] = res['g_cov']
+        self.data[n('T')][sub_index] = T
+        self.data[n('T_s2n')][sub_index] = T_s2n
+
+        self.data[n('g')][sub_index,:] = res['g']
+        self.data[n('g_cov')][sub_index,:,:] = res['g_cov']
 
         if 'arate' in res:
-            self.data[n['arate']][sub_index] = res['arate']
-            self.data[n['tau']][sub_index] = res['tau']
+            self.data[n('arate')][sub_index] = res['arate']
+            self.data[n('tau')][sub_index] = res['tau']
 
         for sn in _stat_names:
             if sn in res:
-                self.data[n[sn]][sub_index] = res[sn]
+                self.data[n(sn)][sub_index] = res[sn]
 
-        if conf['do_shear']:
-            self.data[n['g_sens']][sub_index,:] = res['g_sens']
+        if 'g_sens' in res:
+            self.data[n('g_sens')][sub_index,:] = res['g_sens']
 
-            self.data[n['P']][sub_index] = res['P']
-            self.data[n['Q']][sub_index,:] = res['Q']
-            self.data[n['R']][sub_index,:,:] = res['R']
+        if 'P' in res:
+            self.data[n('P')][sub_index] = res['P']
+            self.data[n('Q')][sub_index,:] = res['Q']
+            self.data[n('R')][sub_index,:,:] = res['R']
  
     def _copy_psf_em1_to_output(self, gmix, sub_index):
         """
@@ -1252,63 +1272,63 @@ class NGMixFitter(FitterBase):
         for model in model_pars:
             np = self._get_model_numpars(model)
 
-            n=get_model_names(model)
+            n=Namer(model)
 
-            dt+=[(n['flags'],'i4'),
-                 (n['pars'],'f8',np),
-                 (n['pars_cov'],'f8',(np,np)),
-                 (n['flux'],'f8'),
-                 (n['flux_err'],'f8'),
-                 (n['g'],'f8',2),
-                 (n['g_cov'],'f8',(2,2)),
+            dt+=[(n('flags'),'i4'),
+                 (n('pars'),'f8',np),
+                 (n('pars_cov'),'f8',(np,np)),
+                 (n('T'),'f8'),
+                 (n('T_s2n'),'f8'),
+                 (n('flux'),'f8'),
+                 (n('flux_s2n'),'f8'),
+                 (n('g'),'f8',2),
+                 (n('g_cov'),'f8',(2,2)),
                 
-                 (n['s2n_w'],'f8'),
-                 (n['chi2per'],'f8'),
-                 (n['dof'],'f8'),
-                 (n['aic'],'f8'),
-                 (n['bic'],'f8'),
-                 (n['arate'],'f8'),
-                 (n['tau'],'f8'),
+                 (n('s2n_w'),'f8'),
+                 (n('chi2per'),'f8'),
+                 (n('dof'),'f8'),
+                 (n('aic'),'f8'),
+                 (n('bic'),'f8'),
+                 (n('arate'),'f8'),
+                 (n('tau'),'f8'),
                 ]
 
             if conf['do_shear']:
-                dt += [(n['g_sens'],'f8',2),
-                       (n['P'], 'f8'),
-                       (n['Q'], 'f8', 2),
-                       (n['R'], 'f8', (2,2))]
+                dt += [(n('g_sens'),'f8',2),
+                       (n('P'), 'f8'),
+                       (n('Q'), 'f8', 2),
+                       (n('R'), 'f8', (2,2))]
 
 
         num=self.index_list.size
         data=numpy.zeros(num, dtype=dt)
 
-        #data['em_gauss_flux'] = DEFVAL
-        #data['em_gauss_flux_err'] = PDEFVAL
-        #data['em_gauss_cen'] = DEFVAL
-
         for model in model_pars:
-            n=get_model_names(model)
+            n=Namer(model)
 
-            data[n['flags']] = NO_ATTEMPT
+            data[n('flags')] = NO_ATTEMPT
 
-            data[n['pars']] = DEFVAL
-            data[n['pars_cov']] = PDEFVAL
-            data[n['flux']] = DEFVAL
-            data[n['flux_err']] = PDEFVAL
-            data[n['g']] = DEFVAL
-            data[n['g_cov']] = PDEFVAL
+            data[n('pars')] = DEFVAL
+            data[n('pars_cov')] = PDEFVAL
+            data[n('flux')] = DEFVAL
+            data[n('flux_s2n')] = DEFVAL
+            data[n('T')] = DEFVAL
+            data[n('T_s2n')] = DEFVAL
+            data[n('g')] = DEFVAL
+            data[n('g_cov')] = PDEFVAL
 
-            data[n['s2n_w']] = DEFVAL
-            data[n['chi2per']] = PDEFVAL
-            data[n['aic']] = BIG_PDEFVAL
-            data[n['bic']] = BIG_PDEFVAL
+            data[n('s2n_w')] = DEFVAL
+            data[n('chi2per')] = PDEFVAL
+            data[n('aic')] = BIG_PDEFVAL
+            data[n('bic')] = BIG_PDEFVAL
 
-            data[n['tau']] = BIG_PDEFVAL
+            data[n('tau')] = BIG_PDEFVAL
 
             if conf['do_shear']:
-                data[n['g_sens']] = DEFVAL
-                data[n['P']] = DEFVAL
-                data[n['Q']] = DEFVAL
-                data[n['R']] = DEFVAL
+                data[n('g_sens')] = DEFVAL
+                data[n('P')] = DEFVAL
+                data[n('Q')] = DEFVAL
+                data[n('R')] = DEFVAL
      
         self.data=data
 

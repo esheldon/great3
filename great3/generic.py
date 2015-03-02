@@ -248,4 +248,16 @@ def srandu(num=None):
     """
     return 2*(numpy.random.random(num)-0.5)
 
+class Namer(object):
+    """
+    create strings with a specified front prefix
+    """
+    def __init__(self, front=None):
+        self.front=front
+    def __call__(self, name):
+        if self.front is None or self.front=='':
+            return name
+        else:
+            return '%s_%s' % (self.front, name)
+
 

@@ -58,6 +58,8 @@ def run(conf):
         if conf['fitter_class']=='sfit':
             if conf['fitter_type'] == 'maxlike':
                 fitter=great3.sfit.LMFitter(**conf)
+            elif conf['fitter_type']=='isample':
+                fitter=great3.sfit.ISampleFitter(**conf)
             else:
                 raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
         else:

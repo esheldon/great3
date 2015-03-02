@@ -8,12 +8,12 @@ import numpy
 from numpy import log10, sqrt, ones, zeros, exp, array, diag, where
 
 from . import files
+from .generic import Namer
 
-NGAUSS_DEFAULT=20
+NGAUSS_DEFAULT=10
 N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
-
-S2N_RANGE=[50.0, 1000.0]
+GMAX=0.985
 
 
 def fit_joint_run(run, model, **keys):
@@ -28,35 +28,27 @@ def fit_joint_run(run, model, **keys):
     keys['noshape']=keys.get('noshape',True)
     keys['dolog']=keys.get('dolog',True)
 
-    field_list=read_field_list(run, model, **keys)
-    usepars = make_logpars(field_list)
+    data=read_all(run, **keys)
 
-    if keys['dolog']:
-        if keys['noshape']:
-            conf['partype']='hybrid'
-        else:
-            conf['partype']='logpars'
-    else:
-        conf['partype']='linpars'
+    n=Namer(model)
+    pars = zeros( (data.size, 2) )
+    pars[:,0] = data[n('pars')][:,4]
+    pars[:,1] = data[n('pars')][:,5]
+
+    conf['partype']='hybrid'
+
 
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
     print(fits_name)
     print(eps_name)
 
-    if keys['noshape']:
-        fit_joint_noshape(usepars,
-                          model,
-                          fname=fits_name,
-                          eps=eps_name,
-                          **keys)
-
-
-    else:
-        fit_joint_all(usepars,model,
+    fit_joint_noshape(pars,
+                      model,
                       fname=fits_name,
                       eps=eps_name,
                       **keys)
+
 
 
 def fit_joint_noshape(pars,
@@ -67,7 +59,6 @@ def fit_joint_noshape(pars,
                       show=False,
                       eps=None,
                       fname=None,
-                      dolog=True,
                       **keys):
     """
     pars should be [nobj, ndim]
@@ -81,14 +72,11 @@ def fit_joint_noshape(pars,
     print("ngauss:   ",ngauss)
     print("n_iter:   ",n_iter)
     print("min_covar:",min_covar)
-    if dolog:
-        print("using log pars")
-    else:
-        raise ValueError("no lin pars")
 
     ndim = pars.shape[1]
     assert (ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
 
+    dolog=True
     par_labels=get_par_labels(model, ndim, dolog)
 
     gmm0=fit_gmix(pars, ngauss, n_iter, min_covar=min_covar)
@@ -226,16 +214,16 @@ _par_labels_sersic_log[3] = [r'$log_{10}(T)$',
 
 
 _par_labels_log={}
-_par_labels_log[2] = [r'$log_{10}(T)$',
-                      r'$log_{10}(F)$']
+_par_labels_log[2] = [r'$log(T)$',
+                      r'$log(F)$']
 
 _par_labels_log[3] = [r'$|\eta|$',
-                      r'$log_{10}(T)$',
-                      r'$log_{10}(F)$']
+                      r'$log(T)$',
+                      r'$log(F)$']
 _par_labels_log[4] = [r'$|\eta|$',
-                      r'$log_{10}(T)$',
-                      r'$log_{10}(F_b)$',
-                      r'$log_{10}(F_d)$']
+                      r'$log(T)$',
+                      r'$log(F_b)$',
+                      r'$log(F_d)$']
 
 _par_labels_lin={}
 _par_labels_lin[2] = [r'$T$',
@@ -370,7 +358,6 @@ def make_logpars(field_list):
         start += nf
 
     return logpars
-
 
 
 def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
@@ -817,15 +804,48 @@ class GPriorFitterAlt(GPriorFitterExp):
         print( fmt % self.result )
 
 
+def read_all(run, gmax=GMAX, **keys):
+    """
+    read data from a deep run
+
+    I've been using the run g301-rgc-deep01
+    """
+    import esutil as eu
+    conf=files.read_config(run)
+
+    field_list=[]
+    for subid in xrange(5):
+        conf['subid']=subid
+        data=files.read_output(**conf)
+
+        gexp=sqrt( data['exp_g'][:,0]**2 + data['exp_g'][:,1]**2 )
+        gdev=sqrt( data['dev_g'][:,0]**2 + data['dev_g'][:,1]**2 )
+        w,=where(  (data['exp_flags']==0)
+                 & (data['dev_flags']==0)
+                 & (gexp < gmax )
+                 & (gdev < gmax ) )
+        data=data[w]
+
+        field_list.append(data)
+
+    data=eu.numpy_util.combine_arrlist(field_list)
+    return data
+
+def fit_T(run, model, **keys):
+    import esutil as eu
+    namer=Namer(model)
+
+    fname=namer('pars')
+
+    h=eu.stat.histogram
+
 def read_field_list(run, model, **keys):
     """
     read in results from a deep field
     """
     conf=files.read_config(run)
-    s2n_range=keys.get('s2n_range',S2N_RANGE)
     noshape=keys.get('noshape',False)
 
-    print("s2n_range:",s2n_range)
     print("noshape:",noshape)
 
     pars_name='%s_pars' % model
@@ -838,9 +858,7 @@ def read_field_list(run, model, **keys):
         data=files.read_output(**conf)
 
         g=sqrt( data[g_name][:,0]**2 + data[g_name][:,1]**2 )
-        w,=where(  (data[s2n_name] > s2n_range[0])
-                 & (data[s2n_name] < s2n_range[1])
-                 & (g < 1.0))
+        w,=where( g < GMAX )
 
         if noshape:
             pars=data[pars_name][w,4:]

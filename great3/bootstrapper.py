@@ -35,6 +35,14 @@ class Bootstrapper(object):
             raise RuntimeError("you need to run fit_max successfully first")
         return self.max_fitter
 
+    def get_isampler(self):
+        """
+        get the importance sampler
+        """
+        if not hasattr(self,'isampler'):
+            raise RuntimeError("you need to run isample() successfully first")
+        return self.isampler
+
 
     def fit_psf(self, psf_model, Tguess=None, ntry=4):
         """
@@ -82,7 +90,56 @@ class Bootstrapper(object):
         res=self.max_fitter.get_result()
 
         if res['flags'] != 0:
-            raise GalFailure("failed to fit galaxy")
+            raise GalFailure("failed to fit galaxy with maxlike")
+
+    def isample(self, gal_model, ipars, prior=None):
+        """
+        bootstrap off the maxlike run
+        """
+
+        self._try_replace_cov(ipars['cov_pars'])
+
+        max_fitter=self.max_fitter
+        use_fitter=max_fitter
+
+        niter=len(ipars['nsample'])
+        for i,nsample in enumerate(ipars['nsample']):
+            sampler=self._make_sampler(use_fitter, ipars)
+            if sampler is None:
+                raise GalFailure("isampler fit failed")
+
+            sampler.make_samples(nsample)
+
+            sampler.set_iweights(max_fitter.calc_lnprob)
+            sampler.calc_result()
+
+            tres=sampler.get_result()
+
+            print("    eff iter %d: %.2f" % (i,tres['efficiency']))
+            use_fitter = sampler
+
+        self.isampler=sampler
+
+    def _make_sampler(self, fitter, ipars):
+        from ngmix.fitting import ISampler
+        from numpy.linalg import LinAlgError
+
+        res=fitter.get_result()
+        icov = res['pars_cov']*ipars['ifactor']**2
+
+        try:
+            sampler=ISampler(res['pars'],
+                             icov,
+                             ipars['df'],
+                             min_err=ipars['min_err'],
+                             max_err=ipars['max_err'])
+        except LinAlgError:
+            print("        bad cov")
+            sampler=None
+
+        return sampler
+
+
 
     def _fit_gal_psf_flux(self):
         """
@@ -130,6 +187,25 @@ class Bootstrapper(object):
         return guesser
 
 
+
+    def _try_replace_cov(self, cov_pars):
+        """
+        the lm cov sucks, try to replace it
+        """
+        if not hasattr(self,'max_fitter'):
+            raise RuntimeError("you need to fit with the max like first")
+
+        fitter=self.max_fitter
+
+        # reference to res
+        res=fitter.get_result()
+
+        print("        replacing cov")
+        fitter.calc_cov(cov_pars['h'],cov_pars['m'])
+
+        if res['flags'] != 0:
+            print("        replacement failed")
+            res['flags']=0
 
 
 class PSFRunner(object):
