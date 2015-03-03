@@ -448,6 +448,7 @@ def get_output_dir(**keys):
 
     return os.path.join(rd, 'output')
 
+
 def get_output_file(**keys):
     """
     Get output file
@@ -796,3 +797,40 @@ def get_chunk_ranges(nper):
 def get_storage_dir():
     tdir=os.environ['TMPDIR']
     return os.path.join(tdir,'great3-storage')
+
+
+
+def get_plot_dir(**keys):
+    """
+    Get the directory holding the outputs
+    """
+    rd=get_run_dir(**keys)
+
+    return os.path.join(rd, 'plots')
+
+
+def get_plot_file(**keys):
+    """
+    Get plot file
+
+    parameters
+    ----------
+    run: string
+        Required keyword, the run id
+    extra: string
+        Extra stuff on the end of the file name
+    """
+    d=get_plot_dir(**keys)
+
+    fname=['%(run)s' % keys]
+
+    if 'extra' in keys:
+        fname += [keys['extra']]
+
+    fname='-'.join(fname)
+
+    fname='%s.eps' % fname
+
+    return os.path.join(d, fname)
+
+
