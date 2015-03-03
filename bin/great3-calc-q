@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+"""
+calculate q for the given run
+
+We must chdir to the great3-public directory because that code is not a library
+"""
+from __future__ import print_function, division
+import sys
+import great3
+import yaml
+
+import great3sims
+
+from argparse import ArgumentParser
+parser=ArgumentParser(__doc__)
+
+parser.add_argument('config_file', help='config file to read')
+parser.add_argument('cuts_file', help='cuts file name')
+parser.add_argument('model', help='model used for shear')
+
+def main():
+    args=parser.parse_args()
+
+    config_file=args.config_file
+    cuts_config=args.cuts_file
+    model=args.model
+
+    conf=yaml.load(open(config_file))
+    cuts=yaml.load(open(cuts_config))
+
+
+    conf['cut'] = cuts['cut']
+
+    shfile=great3.files.get_shear_file(model=model, **conf)
+
+    truth_dir=great3.files.get_truth_dir(**conf)
+    storage_dir=great3.files.get_storage_dir()
+    
+    q = great3sims.metrics.evaluate.q_constant_err(shfile,
+                                                   conf['experiment'],
+                                                   conf['obs_type'],
+                                                   storage_dir=storage_dir,
+                                                   truth_dir=truth_dir,
+                                                   plot=True,
+                                                   pretty_print=True)
+    
+
+main()
