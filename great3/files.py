@@ -50,6 +50,26 @@ def get_dir(**keys):
     d=os.path.join(d,great3run,'data','public')
     return d
 
+def get_truth_dir(**keys):
+    """
+    get truth directory
+
+    parameters
+    ----------
+    great3run: string
+        One of my great3 runs, e.g. run01
+
+    The GREAT3_DATA_DIR environment variable must be set
+    """
+
+    great3run=keys['great3run']
+    d=os.environ['GREAT3_DATA_DIR']
+
+    #d=os.path.join(d,great3run,'data')
+    d=os.path.join(d,great3run,'data','truth')
+    return d
+
+
 def get_branch_dir(**keys):
     """
     $GREAT3_DATA_DIR/experiment/obs_type/shear_type
@@ -602,6 +622,8 @@ def get_shear_file(**keys):
         Required keyword, the run id
     cut: string
         Required keyword representing the cuts
+    model: string
+        Model fit to use
     """
     d=get_output_dir(**keys)
 
@@ -610,9 +632,9 @@ def get_shear_file(**keys):
     with_psf=keys.get('with_psf',False)
 
     if with_psf:
-        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s-extra.dat'
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(model)s-%(cut)s-extra.dat'
     else:
-        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(cut)s.dat'
+        fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(run)s-%(model)s-%(cut)s.dat'
 
     fname = fname % keys
 
@@ -770,3 +792,7 @@ def get_chunk_ranges(nper):
         high.append( high_i )
 
     return low,high
+
+def get_storage_dir():
+    tdir=os.environ['TMPDIR']
+    return os.path.join(tdir,'great3-storage')
