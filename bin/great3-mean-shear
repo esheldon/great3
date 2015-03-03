@@ -1,22 +1,27 @@
 #!/usr/bin/env python
 """
-    %prog [options] config_file cuts_config_file
+    %prog [options] config_file cuts_config_file model
 """
 from __future__ import print_function
 
 import sys
 import yaml
 import numpy
-from numpy import where, isfinite, sqrt, zeros, diag
+from numpy import where, isfinite, sqrt, zeros, diag, exp
+
+import ngmix
 
 import great3
 from great3 import files
+from great3.generic import Namer
 
 from optparse import OptionParser
 parser=OptionParser(__doc__)
 
 parser.add_option('--with-psf',action='store_true',
                   help="include psf info. File name is different.")
+parser.add_option('--use-weights',action='store_true',
+                  help="use weights for lensfit style")
 
 def get_finite_logic(data, model):
     """
@@ -104,17 +109,150 @@ def do_nfit_select(data, conf, cuts):
         print("kept %d/%d" % (w.size,data.size))
     return w
 
-def do_calc_mean_shear(conf, cuts, subid, with_psf=False):
+def do_sfit_select(data, conf, cuts, model):
+
+    n=Namer(model)
+
+    logic = data['flags'] == 0
+
+    w,=where(logic)
+    if w.size != data.size:
+        print("found %d/%d with flags==0" % (w.size,data.size))
+
+    model_flag_logic = (data[n('flags')]==0)
+    w,=where(model_flag_logic)
+    if w.size != data.size:
+        print("found %d/%d with %s==0" % (w.size,data.size,n('flags')))
+
+    logic = logic & model_flag_logic
+
+    if cuts['check_finite']:
+        tmp_logic = (isfinite(data[n('g')][:,0])
+                        & isfinite(data[n('g')][:,1])
+                        & isfinite(data[n('g_sens')][:,0])
+                        & isfinite(data[n('g_sens')][:,1]) )
+
+        w,=where(tmp_logic)
+        if w.size != data.size:
+            print("found %d/%d finite P,Q,R" % (w.size,data.size))
+
+        logic = logic & tmp_logic
+
+    if 'g_sens_range' in cuts:
+        gr=cuts['g_sens_range']
+        tmp_logic = (  (data[n('g_sens')][:,0] > gr[0])
+                   & (data[n('g_sens')][:,0] < gr[1])
+                   & (data[n('g_sens')][:,1] > gr[0])
+                   & (data[n('g_sens')][:,1] < gr[1]) )
+        w,=where(tmp_logic)
+        if w.size != data.size:
+            mess="found %d/%d with sens in [%s,%s]"
+            print(mess % (w.size,data.size,gr[0],gr[1]))
+
+        logic = logic & tmp_logic
+
+
+    if 's2n_range' in cuts:
+        s2nr = cuts['s2n_range']
+        tmp_logic = (  (data[n('s2n_w')] > s2nr[0])
+                     & (data[n('s2n_w')] < s2nr[1]) )
+        w,=where(tmp_logic)
+        if w.size != data.size:
+            mess="found %d/%d s2n in [%s,%s]"
+            print(mess % (w.size,data.size,s2nr[0],s2nr[1]))
+
+        logic = logic & tmp_logic
+
+    if 'efficiency_min' in cuts:
+        effmin=cuts['efficiency_min']
+        tmp_logic = ( data[n('efficiency')] > effmin )
+        w,=where(tmp_logic)
+        if w.size != data.size:
+            print("found %d/%d efficiency > %g" % (w.size,data.size,effmin))
+
+        logic = logic & tmp_logic
+
+    if 'Trat_min' in cuts:
+        Trat_min=cuts['Trat_min']
+        if n('log_T') in data.dtype.names:
+            T = exp(data[n('log_T')])
+        else:
+            T = exp(data[n('T')])
+        psf_T = data['psf_T']
+        Trat = T/psf_T
+
+        tmp_logic = ( Trat > Trat_min)
+        w,=where(tmp_logic)
+        if w.size != data.size:
+            print("found %d/%d Trat > %g" % (w.size,data.size,Trat_min))
+
+        logic = logic & tmp_logic
+
+
+    w,=where(logic)
+    if w.size != data.size:
+        print("kept %d/%d" % (w.size,data.size))
+    return w
+
+def get_weights(data, model, type='noise'):
+    SN=0.16
+
+    n=Namer(model)
+
+    if type=='noise':
+        name=n('g_cov')
+        weights=1.0/(  2*SN**2
+                     + data[name][:,0,0]
+                     + 2*data[name][:,0,1] + 
+                     + data[name][:,1,1] )
+    elif type=='Ts2n':
+        Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
+        weights = Ts2n**2
+    else:
+        raise ValueError("bad weights type: '%s'" % type)
+
+    return weights
+
+def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
     """
     Read the data and calculate the mean shear according
     the the run type
     """
+    n=Namer(model)
 
     conf['subid']=subid
     print("-"*70)
     data=files.read_output(**conf)
 
-    if 'nfit' in conf['run']:
+    res={}
+
+    fclass = conf.get('fitter_class',None)
+    if fclass is not None:
+        if fclass=='sfit':
+            from ngmix.lensfit import lensfit_jackknife
+
+            w=do_sfit_select(data, conf, cuts, model)
+            if cuts['use_weights']:
+                print("    getting weights")
+                wts=get_weights(data,model,type=cuts['use_weights'])
+                wts=wts[w]
+            else:
+                wts=None
+            
+            chunksize = w.size//1000
+            if chunksize < 1:
+                chunksize=1
+            print("jackknife size:",chunksize)
+
+            shear, shear_cov = lensfit_jackknife(data[n('g')][w,:],
+                                                 data[n('g_sens')][w,:],
+                                                 weights=wts,
+                                                 chunksize=chunksize)
+            res = {'shear':shear,'shear_cov':shear_cov}
+        else:
+            raise ValueError("bad fitter class: '%s'" % fclass)
+
+    elif 'nfit' in conf['run']:
         shear_expand = get_shear_expand(conf)
         model=conf['fit_models'][0]
 
@@ -150,19 +288,24 @@ def do_write_with_psf(subid, res, fobj):
     fobj.write('%d %.16g %.16g %.16g %.16g %.16g %.16g\n' % out)
 
 def do_write_no_psf(subid, res, fobj):
-    out=(subid, res['shear'][0], res['shear'][1])
-    fobj.write('%d %.16g %.16g\n' % out)
+    out=(subid,
+         res['shear'][0],
+         sqrt(res['shear_cov'][0,0]),
+         res['shear'][1],
+         sqrt(res['shear_cov'][1,1]) )
+    fobj.write('%d %.16g %.16g %.16g %.16g\n' % out)
 
 
 def main():
     options,args = parser.parse_args(sys.argv[1:])
 
-    if len(args) < 2:
+    if len(args) < 3:
         parser.print_help()
         sys.exit(45)
 
     config_file=args[0]
     cuts_config=args[1]
+    model=args[2]
 
     if len(args) > 2:
         fobj=open(args[2],'w')
@@ -178,17 +321,18 @@ def main():
 
     with_psf=options.with_psf
 
-    outname=files.get_shear_file(with_psf=with_psf, **conf)
+    outname=files.get_shear_file(with_psf=with_psf, model=model, **conf)
     print("writing to output file:",outname)
 
     with open(outname,'w') as fobj:
         for subid in xrange(nsub):
-            res=do_calc_mean_shear(conf, cuts, subid, with_psf=with_psf)
+            res=do_calc_mean_shear(conf, cuts, subid, model, 
+                                   with_psf=with_psf)
 
             if with_psf:
                 do_write_with_psf(subid,res, fobj)
             else:
-                do_write_no_psf(subid,res, fobj)
+                do_write_no_psf(subid, res, fobj)
 
             out2=(subid, res['shear'][0], sqrt(res['shear_cov'][0,0]),
                   res['shear'][1], sqrt(res['shear_cov'][1,1]) )
