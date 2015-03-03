@@ -1,9 +1,10 @@
 from __future__ import print_function
 
 import numpy
-from numpy import array
+from numpy import array, sqrt
 
 import ngmix
+from ngmix import Observation
 from .generic import srandu, PSFFailure, GalFailure
 
 class Bootstrapper(object):
@@ -46,18 +47,18 @@ class Bootstrapper(object):
 
     def fit_psf(self, psf_model, Tguess=None, ntry=4):
         """
-        fit the psf using a PSFRunner
+        fit the psf using a PSFRunner or EMRunner
 
         TODO: add bootstrapping T guess as well, from unweighted moments
         """
         assert Tguess is not None,"send a Tguess"
 
-        lm_pars={'maxfev': 4000}
-        runner=PSFRunner(self.psf_obs, psf_model, Tguess, lm_pars)
-        runner.go(ntry=ntry)
+        if 'em' in psf_model:
+            runner=self._fit_psf_em(psf_model, Tguess, ntry)
+        else:
+            runner=self._fit_psf_max(psf_model, Tguess, ntry)
 
         psf_fitter = runner.fitter
-
         res=psf_fitter.get_result()
 
         if res['flags']==0:
@@ -69,6 +70,26 @@ class Bootstrapper(object):
 
         else:
             raise PSFFailure("failed to fit psf")
+
+    def _fit_psf_em(self, psf_model, Tguess, ntry):
+        from .nfit import get_em_ngauss
+
+        ngauss=get_em_ngauss(psf_model)
+        em_pars={'tol': 5.0e-6, 'maxiter': 50000}
+
+        runner=EMRunner(self.psf_obs, Tguess, ngauss, em_pars)
+        runner.go(ntry=ntry)
+
+        return runner
+
+
+    def _fit_psf_max(self, psf_model, Tguess, ntry):
+        lm_pars={'maxfev': 4000}
+        runner=PSFRunner(self.psf_obs, psf_model, Tguess, lm_pars)
+        runner.go(ntry=ntry)
+
+        return runner
+
 
     def fit_max(self, gal_model, pars, prior=None, ntry=1):
         """
@@ -250,6 +271,123 @@ class PSFRunner(object):
         Fguess = self.obs.image.sum()
         Fguess *= self.obs.jacobian.get_scale()**2
         self.guess0=array( [0.0, 0.0, 0.0, 0.0, Tguess, Fguess] )
+
+class EMRunner(object):
+    """
+    wrapper to generate guesses and run the psf fitter a few times
+    """
+    def __init__(self, obs, Tguess, ngauss, em_pars):
+
+        self.ngauss = ngauss
+        self.Tguess = Tguess
+        self.sigma_guess = sqrt(Tguess/2)
+        self.set_obs(obs)
+
+        self.em_pars=em_pars
+
+    def set_obs(self, obsin):
+        """
+        set a new observation with sky
+        """
+        im_with_sky, sky = ngmix.em.prep_image(obsin.image)
+
+        self.obs   = Observation(im_with_sky, jacobian=obsin.jacobian)
+        self.sky   = sky
+
+
+    def go(self, ntry=1):
+
+        fitter=ngmix.em.GMixEM(self.obs)
+        for i in xrange(ntry):
+            guess=self.get_guess()
+
+            fitter.go(guess, self.sky, **self.em_pars)
+
+            res=fitter.get_result()
+            if res['flags']==0:
+                break
+
+        self.fitter=fitter
+
+    def get_guess(self):
+        """
+        Guess for the EM algorithm
+        """
+
+        if self.ngauss==1:
+            return self._get_em_guess_1gauss()
+        elif self.ngauss==2:
+            return self._get_em_guess_2gauss()
+        elif self.ngauss==3:
+            return self._get_em_guess_3gauss()
+        else:
+            raise ValueError("bad ngauss: %d" % self.ngauss)
+
+    def _get_em_guess_1gauss(self):
+
+        sigma2 = self.sigma_guess**2
+        pars=array( [1.0 + 0.1*srandu(),
+                     0.1*srandu(),
+                     0.1*srandu(), 
+                     sigma2*(1.0 + 0.1*srandu()),
+                     0.2*sigma2*srandu(),
+                     sigma2*(1.0 + 0.1*srandu())] )
+
+        return ngmix.gmix.GMix(pars=pars)
+
+    def _get_em_guess_2gauss(self):
+        from .nfit import _em2_pguess, _em2_fguess
+
+        sigma2 = self.sigma_guess**2
+
+        pars=array( [_em2_pguess[0],
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                     0.0,
+                     _em2_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em2_pguess[1],
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                     0.0,
+                     _em2_fguess[1]*sigma2*(1.0 + 0.1*srandu())] )
+
+
+        return ngmix.gmix.GMix(pars=pars)
+
+    def _get_em_guess_3gauss(self):
+        from .nfit import _em3_pguess, _em3_fguess
+
+        sigma2 = self.sigma_guess**2
+
+        pars=array( [_em3_pguess[0]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[1]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[2]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu())]
+
+                  )
+
+
+        return ngmix.gmix.GMix(pars=pars)
+
 
 
 class MaxRunner(object):
