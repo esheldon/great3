@@ -804,7 +804,7 @@ class GPriorFitterAlt(GPriorFitterExp):
         print( fmt % self.result )
 
 
-def read_all(run, gmax=GMAX, **keys):
+def read_all(run, gmax=GMAX, nsub=5, **keys):
     """
     read data from a deep run
 
@@ -814,16 +814,20 @@ def read_all(run, gmax=GMAX, **keys):
     conf=files.read_config(run)
 
     field_list=[]
-    for subid in xrange(5):
+    for subid in xrange(nsub):
         conf['subid']=subid
         data=files.read_output(**conf)
 
-        gexp=sqrt( data['exp_g'][:,0]**2 + data['exp_g'][:,1]**2 )
-        gdev=sqrt( data['dev_g'][:,0]**2 + data['dev_g'][:,1]**2 )
-        w,=where(  (data['exp_flags']==0)
-                 & (data['dev_flags']==0)
-                 & (gexp < gmax )
-                 & (gdev < gmax ) )
+        logic = ones(data.size,dtype=bool)
+
+        if 'exp_g' in data.dtype.names:
+            gexp=sqrt( data['exp_g'][:,0]**2 + data['exp_g'][:,1]**2 )
+            logic = logic & (data['exp_flags']==0) & (gexp < gmax)
+        if 'dev_g' in data.dtype.names:
+            gdev=sqrt( data['dev_g'][:,0]**2 + data['dev_g'][:,1]**2 )
+            logic = logic & (data['dev_flags']==0) & (gdev < gmax)
+
+        w,=where(logic)
         data=data[w]
 
         field_list.append(data)
