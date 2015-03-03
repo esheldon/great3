@@ -4,7 +4,7 @@ import numpy
 from numpy import array
 
 import ngmix
-from .generic import srandu
+from .generic import srandu, PSFFailure, GalFailure
 
 class Bootstrapper(object):
     def __init__(self, psf_obs, gal_obs, use_logpars=False):
