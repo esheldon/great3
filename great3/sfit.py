@@ -35,7 +35,7 @@ class LMFitter(NGMixFitter):
 
         # this is a copy
         self.res['psf_gmix'] = boot.psf_obs.get_gmix()
-
+        self._print_psf_res()
 
         if self.make_plots:
             self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
@@ -75,6 +75,7 @@ class LMFitter(NGMixFitter):
 
         if self.conf['use_random_psf']:
             rint=numpy.random.randint(9)
+            print("    random psf:",rint)
             psf_image, psf_cen_guess = \
                     self.field.get_star_image(rint)
         else:
@@ -112,14 +113,16 @@ class ISampleFitter(LMFitter):
 
         # this is a copy
         self.res['psf_gmix'] = boot.psf_obs.get_gmix()
-
+        self._print_psf_res()
 
         if self.make_plots:
             self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
 
         max_pars=self.conf['max_pars']
         ipars=self.conf['isample_pars']
-        for model in self.conf['model_pars']:
+
+        models=list(self.conf['model_pars'].keys())
+        for i,model in enumerate(models):
             try:
 
                 prior=self.priors[model]
@@ -142,7 +145,8 @@ class ISampleFitter(LMFitter):
                 self._print_galaxy_res(model)
 
                 if self.make_plots:
-                    self._do_gal_plots(model, fitter)
+                    self._compare_gal(model, boot.max_fitter)
+                    self._make_trials_plot(model, sampler)
 
             except GalFailure:
                 print("failed to fit galaxy with model: %s" % model)
@@ -195,4 +199,20 @@ class ISampleFitter(LMFitter):
         res['R']=R
         '''
 
+    def _make_trials_plot(self, model, fitter):
+        """
+        Plot the trials
+        """
+        width,height=800,800
+        pdict=fitter.make_plots(title=model,
+                                weights=fitter.get_iweights(),
+                                nsigma=4)
 
+
+        trials_pname='trials-%06d-%s.png' % (self.index,model)
+        print("          ",trials_pname)
+        pdict['trials'].write_img(width,height,trials_pname)
+
+        wtrials_pname='wtrials-%06d-%s.png' % (self.index,model)
+        print("          ",wtrials_pname)
+        pdict['wtrials'].write_img(width,height,wtrials_pname)
