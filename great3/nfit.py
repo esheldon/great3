@@ -43,6 +43,7 @@ class NGMixFitter(FitterBase):
 
         if self.conf['use_random_psf']:
             rint=numpy.random.randint(9)
+            print("    random psf:",rint)
             self.psf_image,self.psf_cen_guess = \
                     self.field.get_star_image(rint)
         else:
@@ -1095,6 +1096,12 @@ class NGMixFitter(FitterBase):
         mess=mess % res
         print(mess)
 
+    def _print_psf_res(self):
+        g1,g2,T=self.res['psf_gmix'].get_g1g2T()
+        fwhm=sqrt(self.res['psf_gmix'].get_T()/2.0)*2.35
+        print("    psf fwhm: %.3g g: %.3g %.3g" % (fwhm,g1,g2))
+
+
     def _finish_setup(self):
         """
         Process the rest of the input
@@ -1176,14 +1183,14 @@ class NGMixFitter(FitterBase):
             #data['em_gauss_cen'][sub_index] = res['em_gauss_cen']
 
             for model in self.conf['model_pars']:
-                self._copy_pars(sub_index, model, res)
+                if model in res:
+                    self._copy_pars(sub_index, model, res)
 
     def _copy_pars(self, sub_index, model, allres):
         """
         Copy from the result dict to the output array
         """
 
-        conf=self.conf
         res = allres[model]['res']
 
         n=Namer(model)
@@ -1203,10 +1210,10 @@ class NGMixFitter(FitterBase):
         self.data[n('pars')][sub_index,:] = pars
         self.data[n('pars_cov')][sub_index,:,:] = pars_cov
 
-        self.data[n('flux')][sub_index] = flux
+        self.data[n('log_flux')][sub_index] = flux
         self.data[n('flux_s2n')][sub_index] = flux_s2n
 
-        self.data[n('T')][sub_index] = T
+        self.data[n('log_T')][sub_index] = T
         self.data[n('T_s2n')][sub_index] = T_s2n
 
         self.data[n('g')][sub_index,:] = res['g']
@@ -1215,6 +1222,9 @@ class NGMixFitter(FitterBase):
         if 'arate' in res:
             self.data[n('arate')][sub_index] = res['arate']
             self.data[n('tau')][sub_index] = res['tau']
+
+        if 'efficiency' in res:
+            self.data[n('efficiency')][sub_index] = res['efficiency']
 
         for sn in _stat_names:
             if sn in res:
@@ -1277,9 +1287,9 @@ class NGMixFitter(FitterBase):
             dt+=[(n('flags'),'i4'),
                  (n('pars'),'f8',np),
                  (n('pars_cov'),'f8',(np,np)),
-                 (n('T'),'f8'),
+                 (n('log_T'),'f8'),
                  (n('T_s2n'),'f8'),
-                 (n('flux'),'f8'),
+                 (n('log_flux'),'f8'),
                  (n('flux_s2n'),'f8'),
                  (n('g'),'f8',2),
                  (n('g_cov'),'f8',(2,2)),
@@ -1291,6 +1301,7 @@ class NGMixFitter(FitterBase):
                  (n('bic'),'f8'),
                  (n('arate'),'f8'),
                  (n('tau'),'f8'),
+                 (n('efficiency'),'f8'),
                 ]
 
             if conf['do_shear']:
@@ -1310,9 +1321,9 @@ class NGMixFitter(FitterBase):
 
             data[n('pars')] = DEFVAL
             data[n('pars_cov')] = PDEFVAL
-            data[n('flux')] = DEFVAL
+            data[n('log_flux')] = DEFVAL
             data[n('flux_s2n')] = DEFVAL
-            data[n('T')] = DEFVAL
+            data[n('log_T')] = DEFVAL
             data[n('T_s2n')] = DEFVAL
             data[n('g')] = DEFVAL
             data[n('g_cov')] = PDEFVAL
