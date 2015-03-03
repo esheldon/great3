@@ -298,12 +298,16 @@ class NGMixFitter(FitterBase):
         compare psf image to best fit model
         """
         import images
+        from ngmix.em import GMixEM
 
         psf_image=self.psf_obs.image
 
-        gmix=fitter.get_gmix()
-        model_image=gmix.make_image(psf_image.shape,
-                                    jacobian=self.psf_obs.jacobian)
+        if isinstance(fitter,GMixEM):
+            model_image = fitter.make_image(counts=psf_image.sum())
+        else:
+            gmix=fitter.get_gmix()
+            model_image=gmix.make_image(psf_image.shape,
+                                        jacobian=self.psf_obs.jacobian)
 
         plt=images.compare_images(psf_image,
                                   model_image,
