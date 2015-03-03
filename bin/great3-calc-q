@@ -5,7 +5,7 @@ calculate q for the given run
 We must chdir to the great3-public directory because that code is not a library
 """
 from __future__ import print_function, division
-import sys
+import os,sys
 import great3
 import yaml
 
@@ -17,6 +17,18 @@ parser=ArgumentParser(__doc__)
 parser.add_argument('config_file', help='config file to read')
 parser.add_argument('cuts_file', help='cuts file name')
 parser.add_argument('model', help='model used for shear')
+
+parser.add_argument('--show', action='store_true', help='show plot on screen')
+
+def get_epsfile(run,cut):
+    d=great3.files.get_plot_dir(run=run)
+    if not os.path.exists(d):
+        os.makedirs(d)
+
+    extra='shear-bias-%s' % cut
+    epsfile=great3.files.get_plot_file(run=run, extra=extra)
+
+    return epsfile
 
 def main():
     args=parser.parse_args()
@@ -36,12 +48,14 @@ def main():
     truth_dir=great3.files.get_truth_dir(**conf)
     storage_dir=great3.files.get_storage_dir()
     
+    epsfile=get_epsfile(conf['run'],conf['cut'])
     q = great3sims.metrics.evaluate.q_constant_err(shfile,
                                                    conf['experiment'],
                                                    conf['obs_type'],
                                                    storage_dir=storage_dir,
                                                    truth_dir=truth_dir,
-                                                   plot=True,
+                                                   epsfile=epsfile,
+                                                   show=args.show,
                                                    pretty_print=True)
     
 
