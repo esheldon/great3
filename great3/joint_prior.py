@@ -42,6 +42,34 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
 
         p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
 
+    elif type=='g301-cgc-deep01':
+        """
+
+        this GPriorGreatDES is very noisy for recovering shear, might want to
+        use essentially *anything* else, even BA (should test in my sims)
+
+        """
+
+        t=files.read_prior(experiment="real_galaxy",
+                            obs_type="ground",
+                            shear_type="constant",
+                            run="g301-rgc-deep01",
+                            partype="hybrid",
+                            ext="fits")
+
+        TF_prior=JointPriorTF(t['weights'],
+                              t['means'],
+                              t['covars'])
+
+        cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
+
+        if g_prior_during:
+            g_prior = ngmix.priors.make_gprior_cosmos_sersic()
+        else:
+            g_prior = ngmix.priors.ZDisk2D(1.0)
+
+        p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
+
        
     elif type=="great3-rgc-exp-hybrid-cosmosg-deep03":
         # pretending we can separate out the shape prior
