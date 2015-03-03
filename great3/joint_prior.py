@@ -13,8 +13,9 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
     g_prior_during=False to just use a simple ZDisk2D
     """
 
-    if type=='g301-rgc-deep01':
+    if 'rgc' in type:
         """
+        e.g. rg302-rgc-deep01
 
         this GPriorGreatDES is very noisy for recovering shear, might want to
         use essentially *anything* else, even BA (should test in my sims)
@@ -24,7 +25,7 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
         t=files.read_prior(experiment="real_galaxy",
                             obs_type="ground",
                             shear_type="constant",
-                            run="g301-rgc-deep01",
+                            run=type,
                             partype="hybrid",
                             ext="fits")
 
@@ -42,18 +43,18 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
 
         p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
 
-    elif type=='g301-cgc-deep01':
+    elif 'cgc' in type:
+        """
+        e.g. rg302-cgc-deep01
+
+        Using a fit to lackner for g prior
+
         """
 
-        this GPriorGreatDES is very noisy for recovering shear, might want to
-        use essentially *anything* else, even BA (should test in my sims)
-
-        """
-
-        t=files.read_prior(experiment="real_galaxy",
+        t=files.read_prior(experiment="control",
                             obs_type="ground",
                             shear_type="constant",
-                            run="g301-rgc-deep01",
+                            run=type,
                             partype="hybrid",
                             ext="fits")
 
@@ -70,7 +71,10 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
 
         p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
 
+    else:
+        raise ValueError("support different priors")
        
+    '''
     elif type=="great3-rgc-exp-hybrid-cosmosg-deep03":
         # pretending we can separate out the shape prior
         t=files.read_prior(experiment="real_galaxy",
@@ -178,6 +182,8 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
 
     else:
         raise ValueError("bad type: '%s'" % type)
+    '''
+
     return p
 
 
