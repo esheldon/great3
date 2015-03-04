@@ -194,18 +194,22 @@ def do_sfit_select(data, conf, cuts, model):
         print("kept %d/%d" % (w.size,data.size))
     return w
 
-def get_weights(data, model, type='noise'):
-    SN=0.16
+def get_weights(data, model, conf):
+    if not conf['use_weights']:
+        return None
+    
 
     n=Namer(model)
 
-    if type=='noise':
+    if conf['use_weights']=='noise':
+        SN=conf['SN']
         name=n('g_cov')
         weights=1.0/(  2*SN**2
                      + data[name][:,0,0]
                      + 2*data[name][:,0,1] + 
                      + data[name][:,1,1] )
-    elif type=='Ts2n':
+    elif conf['use_weights']=='Ts2n':
+        #softening=conf['softening']
         Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
         weights = Ts2n**2
     else:
@@ -232,12 +236,7 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
             from ngmix.lensfit import lensfit_jackknife
 
             w=do_sfit_select(data, conf, cuts, model)
-            if cuts['use_weights']:
-                print("    getting weights")
-                wts=get_weights(data,model,type=cuts['use_weights'])
-                wts=wts[w]
-            else:
-                wts=None
+            wts=get_weights(data[w],model,cuts)
             
             chunksize = w.size//1000
             if chunksize < 1:
