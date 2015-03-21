@@ -7,6 +7,8 @@ import os
 import numpy
 from numpy import log10, sqrt, ones, zeros, exp, array, diag, where
 
+import ngmix
+
 from . import files
 from .generic import Namer
 
@@ -30,7 +32,10 @@ def fit_joint_run(run, model, **keys):
 
     data=read_all(run, **keys)
 
-    n=Namer(model)
+    if model=='cm' and 'composite_g' in data.dtype.names:
+        n=Namer('composite')
+    else:
+        n=Namer(model)
     pars = zeros( (data.size, 2) )
     pars[:,0] = data[n('pars')][:,4]
     pars[:,1] = data[n('pars')][:,5]
@@ -481,7 +486,7 @@ def get_norm_hist(data, min=None, max=None, binsize=1):
     return hdict
 
 
-def fit_g_prior(run, model, **keys):
+def fit_g_prior(run, model, type='exp', **keys):
     """
     Fit only the g prior
     """
@@ -495,6 +500,7 @@ def fit_g_prior(run, model, **keys):
     g=comb[:,0]
 
     binsize=0.01
+    #binsize=0.005
 
     hdict=get_norm_hist(g, min=0, binsize=binsize)
 
@@ -510,13 +516,34 @@ def fit_g_prior(run, model, **keys):
     if w.size > 0:
         ivar[w] = 1.0/hdict['hist_norm_err'][w]**2
 
-    bdf=keys.get('bdf',False)
-    if bdf:
+    if type=='great-des':
+        prior=ngmix.priors.GPriorGreatDES()
+        prior.dofit(hdict['center'],
+                    hdict['hist_norm'],
+                    show=True)
+        return
+
+    elif type=='m-erf':
+        prior=ngmix.priors.GPriorMErf()
+        prior.dofit(hdict['center'],
+                    hdict['hist_norm'],
+                    show=True)
+        return
+
+    elif type=='ba':
+        prior=ngmix.priors.GPriorBA()
+        prior.dofit(hdict['center'],
+                    hdict['hist_norm'],
+                    show=True)
+        return
+
+
+    elif type=='bdf':
         print("bdf")
         gpfitter=GPriorFitterAlt(hdict['center'],
                                  hdict['hist_norm'],
                                  ivar)
-    else:
+    elif type=='exp':
         print("exp")
         gpfitter=GPriorFitterExp(hdict['center'],
                                  hdict['hist_norm'],
@@ -826,6 +853,15 @@ def read_all(run, gmax=GMAX, nsub=5, **keys):
         if 'dev_g' in data.dtype.names:
             gdev=sqrt( data['dev_g'][:,0]**2 + data['dev_g'][:,1]**2 )
             logic = logic & (data['dev_flags']==0) & (gdev < gmax)
+
+        if 'cm_g' in data.dtype.names:
+            gcm=sqrt( data['cm_g'][:,0]**2 + data['cm_g'][:,1]**2 )
+            logic = logic & (data['cm_flags']==0) & (gcm < gmax)
+
+        if 'composite_g' in data.dtype.names:
+            gcm=sqrt( data['composite_g'][:,0]**2 + data['composite_g'][:,1]**2 )
+            logic = logic & (data['composite_flags']==0) & (gcm < gmax)
+
 
         w,=where(logic)
         data=data[w]
