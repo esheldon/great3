@@ -1,11 +1,12 @@
 from __future__ import print_function
 
 import numpy
-from numpy import array, sqrt
+from numpy import array, sqrt, exp, log
 
 import ngmix
 from ngmix import Observation
 from .generic import srandu, PSFFailure, GalFailure
+
 
 class Bootstrapper(object):
     def __init__(self, psf_obs, gal_obs, use_logpars=False):
@@ -113,7 +114,7 @@ class Bootstrapper(object):
         if res['flags'] != 0:
             raise GalFailure("failed to fit galaxy with maxlike")
 
-    def isample(self, gal_model, ipars, prior=None):
+    def isample(self, ipars, prior=None):
         """
         bootstrap off the maxlike run
         """
@@ -127,7 +128,7 @@ class Bootstrapper(object):
         for i,nsample in enumerate(ipars['nsample']):
             sampler=self._make_sampler(use_fitter, ipars)
             if sampler is None:
-                raise GalFailure("isampler fit failed")
+                raise GalFailure("isampling failed")
 
             sampler.make_samples(nsample)
 
@@ -227,6 +228,119 @@ class Bootstrapper(object):
         if res['flags'] != 0:
             print("        replacement failed")
             res['flags']=0
+
+
+class CompositeBootstrapper(Bootstrapper):
+    def fit_max(self, model, pars, prior=None, ntry=1):
+        """
+        fit the galaxy.  You must run fit_psf() successfully first
+        """
+
+        assert model=='cm','model must be cm'
+
+        self._fit_gal_psf_flux()
+
+        print("    fitting exp")
+        exp_fitter=self._fit_one_model_max('exp',pars,prior=prior,ntry=ntry)
+        print("    fitting dev")
+        dev_fitter=self._fit_one_model_max('dev',pars,prior=prior,ntry=ntry)
+
+        print("    fitting fracdev")
+        fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
+        fracdev = fres['fracdev']
+
+        TdByTe = self._get_TdByTe(exp_fitter, dev_fitter)
+
+        guesser=self._get_max_guesser(prior=prior)
+
+        print("    fitting composite")
+        runner=CompositeMaxRunner(self.gal_obs,
+                                  pars,
+                                  guesser,
+                                  fracdev,
+                                  TdByTe,
+                                  prior=prior,
+                                  use_logpars=self.use_logpars)
+
+        runner.go(ntry=ntry)
+
+        self.max_fitter=runner.fitter
+
+        res=self.max_fitter.get_result()
+
+        if res['flags'] != 0:
+            raise GalFailure("failed to fit galaxy with maxlike")
+
+        res['TdByTe'] = TdByTe
+        res['fracdev'] = fres['fracdev']
+        res['fracdev_err'] = fres['fracdev_err']
+
+    def isample(self, ipars, prior=None):
+        super(CompositeBootstrapper,self).isample(ipars,prior=prior)
+        maxres=self.max_fitter.get_result()
+        ires=self.isampler.get_result()
+
+        ires['TdByTe']=maxres['TdByTe']
+        ires['fracdev']=maxres['fracdev']
+        ires['fracdev_err']=maxres['fracdev_err']
+
+    def _fit_one_model_max(self, gal_model, pars, prior=None, ntry=1):
+        """
+        fit the galaxy.  You must run fit_psf() successfully first
+        """
+
+        guesser=self._get_max_guesser(prior=prior)
+
+        runner=MaxRunner(self.gal_obs, gal_model, pars, guesser,
+                         prior=prior,
+                         use_logpars=self.use_logpars)
+
+        runner.go(ntry=ntry)
+
+        fitter=runner.fitter
+
+        res=fitter.get_result()
+
+        if res['flags'] != 0:
+            raise GalFailure("failed to fit galaxy with maxlike")
+
+        return fitter
+
+    def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
+        from ngmix.fitting import FracdevFitter
+
+        epars=exp_fitter.get_result()['pars']
+        dpars=dev_fitter.get_result()['pars']
+
+        ffitter = FracdevFitter(self.gal_obs, epars, dpars,
+                                use_logpars=self.use_logpars)
+        res=ffitter.get_result()
+
+        if res['flags'] != 0:
+            raise GalFailure("failed to fit fracdev")
+
+        mess='        fracdev: %(fracdev).3f +/- %(fracdev_err).3f'
+        mess = mess % res
+        print(mess)
+
+        self.fracdev_fitter=ffitter
+        return res
+
+
+    def _get_TdByTe(self, exp_fitter, dev_fitter):
+        epars=exp_fitter.get_result()['pars']
+        dpars=dev_fitter.get_result()['pars']
+
+        if self.use_logpars:
+            Te = exp(epars[4])
+            Td = exp(dpars[4])
+        else:
+            Te = epars[4]
+            Td = dpars[4]
+        TdByTe = Td/Te
+
+        print('        Td/Te: %.3f' % TdByTe)
+        return TdByTe
 
 
 class PSFRunner(object):
@@ -418,8 +532,6 @@ class MaxRunner(object):
     def go(self, ntry=1):
         if self.method=='lm':
             method=self._go_lm
-        elif self.method=='nm':
-            method=self._go_nm
         else:
             raise ValueError("bad method '%s'" % self.method)
 
@@ -456,22 +568,48 @@ class MaxRunner(object):
 
         self.fitter=fitter
 
-    def _go_nm(self, ntry=1):
-        from ngmix.fitting import MaxSimple
+class CompositeMaxRunner(MaxRunner):
+    """
+    wrapper to generate guesses and run the psf fitter a few times
+    """
+    def __init__(self, obs, pars, guesser, fracdev, TdByTe,
+                 prior=None, use_logpars=False):
+        self.obs=obs
+
+        self.pars=pars
+        self.fracdev=fracdev
+        self.TdByTe=TdByTe
+
+        self.method=pars['method']
+        if self.method == 'lm':
+            self.send_pars=pars['lm_pars']
+        else:
+            self.send_pars=pars
+
+        self.prior=prior
+        self.use_logpars=use_logpars
+
+        self.bestof = pars.get('bestof',1)
+
+        self.guesser=guesser
+
+    def _go_lm(self, ntry=1):
+        from ngmix.fitting import LMComposite
 
         for i in xrange(ntry):
             guess=self.guesser()
-            fitter=MaxSimple(self.obs, self.model,
-                             method='Nelder-Mead',
-                             use_logpars=self.use_logpars,
-                             prior=self.prior)
+            fitter=LMComposite(self.obs,
+                               self.fracdev,
+                               self.TdByTe,
+                               lm_pars=self.send_pars,
+                               use_logpars=self.use_logpars,
+                               prior=self.prior)
 
-            fitter.run_max(guess, **self.send_pars)
+            fitter.go(guess)
 
             res=fitter.get_result()
             if res['flags']==0:
                 break
 
         self.fitter=fitter
-
 
