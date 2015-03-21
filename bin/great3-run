@@ -55,6 +55,7 @@ def run(conf):
 
 
     if 'fitter_class' in conf:
+
         if conf['fitter_class']=='sfit':
             if conf['fitter_type'] == 'maxlike':
                 fitter=great3.sfit.LMFitter(**conf)
@@ -62,6 +63,16 @@ def run(conf):
                 fitter=great3.sfit.ISampleFitter(**conf)
             else:
                 raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
+
+        elif conf['fitter_class']=='sfit-composite':
+            if conf['fitter_type'] == 'maxlike':
+                fitter=great3.sfit.CompositeLMFitter(**conf)
+            elif conf['fitter_type']=='isample':
+                fitter=great3.sfit.CompositeISampleFitter(**conf)
+            else:
+                raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
+
+
         else:
             raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
 
