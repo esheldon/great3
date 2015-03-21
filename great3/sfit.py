@@ -23,9 +23,7 @@ class LMFitter(NGMixFitter):
         self._copy_to_output(sub_index, self.res)
 
     def _dofits(self):
-        boot=Bootstrapper(self.psf_obs,
-                          self.gal_obs,
-                          use_logpars=True)
+        boot=self._get_bootstrapper()
 
         sigma_guess=self.conf['psf_fwhm_guess']/2.35
         Tguess=2*sigma_guess**2
@@ -64,6 +62,13 @@ class LMFitter(NGMixFitter):
                 print("failed to fit galaxy with model: %s" % model)
                 self.res['flags'] = 2**(i+1)
 
+    def _get_bootstrapper(self):
+        boot=Bootstrapper(self.psf_obs,
+                          self.gal_obs,
+                          use_logpars=True)
+        return boot
+
+
     def _set_image_data(self):
         """
         Get all the data we need to do our processing
@@ -98,12 +103,22 @@ class LMFitter(NGMixFitter):
                                  jacobian=gal_jacob)
 
 
+class CompositeLMFitter(LMFitter):
+    """
+    ISampler using a composite model
+    """
+    def _get_bootstrapper(self):
+        boot=CompositeBootstrapper(self.psf_obs,
+                                   self.gal_obs,
+                                   use_logpars=True)
+        return boot
+
+
+
 class ISampleFitter(LMFitter):
     def _dofits(self):
 
-        boot=Bootstrapper(self.psf_obs,
-                          self.gal_obs,
-                          use_logpars=True)
+        boot=self._get_bootstrapper()
 
         sigma_guess=self.conf['psf_fwhm_guess']/2.35
         Tguess=2*sigma_guess**2
@@ -131,9 +146,7 @@ class ISampleFitter(LMFitter):
                              prior=prior,
                              ntry=max_pars['ntry'])
 
-                boot.isample(model,
-                             ipars,
-                             prior=prior)
+                boot.isample(ipars, prior=prior)
 
                 sampler=boot.get_isampler()
                 max_fitter=boot.get_max_fitter()
@@ -216,3 +229,16 @@ class ISampleFitter(LMFitter):
         wtrials_pname='wtrials-%06d-%s.png' % (self.index,model)
         print("          ",wtrials_pname)
         pdict['wtrials'].write_img(width,height,wtrials_pname)
+
+class CompositeISampleFitter(ISampleFitter):
+    """
+    ISampler using a composite model
+    """
+    def _get_bootstrapper(self):
+        boot=CompositeBootstrapper(self.psf_obs,
+                                   self.gal_obs,
+                                   use_logpars=True)
+        return boot
+
+
+
