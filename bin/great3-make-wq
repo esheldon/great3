@@ -28,8 +28,7 @@ function rungreat {
 
     # need to use an environment
     source ~/.bashrc
-    module load great3/work
-    module load great3-config/work
+    source ~/shell_scripts/great3-work-prepare.sh
 
     great3-run --obj-range ${first},${last} ${config} ${subid}
     status=$?
