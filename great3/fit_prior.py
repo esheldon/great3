@@ -54,6 +54,46 @@ def fit_joint_run(run, model, **keys):
                       eps=eps_name,
                       **keys)
 
+def fit_fracdev_run(run, model, **keys):
+    """
+    Fit a joint prior to the fields from the given run
+
+    Calls more generic stuff such as fit_joint_noshape
+    """
+    import fitsio
+    conf=files.read_config(run)
+
+    keys['noshape']=True
+    keys['dolog']=True
+
+    data=read_all(run, **keys)
+
+    if model=='cm' and 'composite_g' in data.dtype.names:
+        n=Namer('composite')
+    else:
+        n=Namer(model)
+
+    fracdev = data[ n('fracdev') ]
+    w,=where( (fracdev > -2) & (fracdev < 2) & (fracdev != 0.0) & (fracdev != 1.0) )
+    fracdev = fracdev[w]
+
+    pars = zeros( (fracdev.size, 1) )
+    pars[:,0] = fracdev
+
+    conf['partype']='fracdev'
+
+    fits_name=files.get_prior_file(ext='fits', **conf)
+    eps_name=files.get_prior_file(ext='eps', **conf)
+    print(fits_name)
+    print(eps_name)
+
+    fit_joint_noshape(pars,
+                      model,
+                      fname=fits_name,
+                      eps=eps_name,
+                      **keys)
+
+
 
 
 def fit_joint_noshape(pars,
@@ -79,14 +119,14 @@ def fit_joint_noshape(pars,
     print("min_covar:",min_covar)
 
     ndim = pars.shape[1]
-    assert (ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
+    assert (ndim==1 or ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
 
     dolog=True
     par_labels=get_par_labels(model, ndim, dolog)
 
     gmm0=fit_gmix(pars, ngauss, n_iter, min_covar=min_covar)
 
-    output=zeros(ngauss, dtype=[('means','f8',ndim),
+    output=zeros(ngauss, dtype=[('means','f8',(ndim,)),
                                 ('covars','f8',(ndim,ndim)),
                                 ('icovars','f8',(ndim,ndim)),
                                 ('weights','f8'),
@@ -401,22 +441,30 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
     num=pars.shape[0]
     ndim=pars.shape[1]
 
-    nrow,ncol = images.get_grid(ndim) 
+    if par_labels[0]=='fracdev':
+        nrow=1
+        ncol=2
+        tab=biggles.Table(nrow,ncol)
+        plin = _plot_single(pars[:,0], samples[:,0], do_ylog=False)
+        plog = _plot_single(pars[:,0], samples[:,0], do_ylog=True)
+        tab[0,0]=plin
+        tab[0,1]=plog
+    else:
+        nrow,ncol = images.get_grid(ndim) 
+        tab=biggles.Table(nrow,ncol)
 
-    tab=biggles.Table(nrow,ncol)
 
+        for dim in xrange(ndim):
+            plt = _plot_single(pars[:,dim], samples[:,dim])
+            if par_labels is not None:
+                plt.xlabel=par_labels[dim]
+            else:
+                plt.xlabel=r'$P_%s$' % dim
 
-    for dim in xrange(ndim):
-        plt = _plot_single(pars[:,dim], samples[:,dim])
-        if par_labels is not None:
-            plt.xlabel=par_labels[dim]
-        else:
-            plt.xlabel=r'$P_%s$' % dim
+            row=(dim)/ncol
+            col=(dim) % ncol
 
-        row=(dim)/ncol
-        col=(dim) % ncol
-
-        tab[row,col] = plt
+            tab[row,col] = plt
 
     tab.aspect_ratio=nrow/float(ncol)
 
@@ -438,7 +486,7 @@ def log_T_to_log_sigma(log_T):
 
     return log_sigma
 
-def _plot_single(data, samples):
+def _plot_single(data, samples, do_ylog=False):
     import biggles
 
     valmin=data.min()
@@ -447,11 +495,23 @@ def _plot_single(data, samples):
     std = data.std()
     binsize=0.1*std
 
+    ph = biggles.make_histc(data, min=valmin, max=valmax, binsize=binsize,  ylog=do_ylog, norm=1)
+    sample_ph= biggles.make_histc(samples, min=valmin, max=valmax, binsize=binsize, color='red', ylog=do_ylog, norm=1)
+
+    ph.label='data'
+    sample_ph.label='fit'
+
+    '''
     hdict = get_norm_hist(data, min=valmin, max=valmax, binsize=binsize)
     sample_hdict = get_norm_hist(samples, min=valmin, max=valmax, binsize=binsize)
 
+
     hist=hdict['hist_norm']
     sample_hist=sample_hdict['hist_norm']
+
+    if do_ylog:
+        hist=hist.astype('f8').clip(min=0.001)
+        sample_hist=sample_hist.astype('f8').clip(min=0.001)
 
 
     ph = biggles.Histogram(hist, x0=valmin, width=4, binsize=binsize)
@@ -459,6 +519,7 @@ def _plot_single(data, samples):
     sample_ph = biggles.Histogram(sample_hist, x0=valmin, 
                                   width=1, color='red', binsize=binsize)
     sample_ph.label = 'joint fit'
+    '''
 
 
     key = biggles.PlotKey(0.1, 0.9, [ph, sample_ph], halign='left')
@@ -466,6 +527,11 @@ def _plot_single(data, samples):
     plt = biggles.FramedPlot()
 
     plt.add( ph, sample_ph, key )
+
+    if do_ylog:
+        plt.ylog=True
+    #if do_ylog:
+    #    plt.yrange=[0.1, 1.1*sample_hist.max()]
 
     return plt
 
@@ -910,6 +976,11 @@ def read_field_list(run, model, **keys):
     return field_list
 
 def get_par_labels(model, ndim, dolog):
+    if ndim==1:
+        par_labels=['fracdev']
+        return par_labels
+
+
     if model=='bdf':
         if dolog:
             par_labels=_par_labels_bdf_log[ndim]

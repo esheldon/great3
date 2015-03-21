@@ -235,6 +235,7 @@ class CompositeBootstrapper(Bootstrapper):
         """
         fit the galaxy.  You must run fit_psf() successfully first
         """
+        from ngmix.gexceptions import GMixRangeError
 
         assert model=='cm','model must be cm'
 
@@ -247,22 +248,32 @@ class CompositeBootstrapper(Bootstrapper):
 
         print("    fitting fracdev")
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
+
+        fracdev_range=pars.get('fracdev_range',[0.0, 1.0])
         fracdev = fres['fracdev']
+        fracdev_clipped = fres['fracdev'].clip(min=fracdev_range[0],max=fracdev_range[1])
+        #print("using fracdev:",fracdev_clipped)
 
         TdByTe = self._get_TdByTe(exp_fitter, dev_fitter)
 
         guesser=self._get_max_guesser(prior=prior)
 
         print("    fitting composite")
-        runner=CompositeMaxRunner(self.gal_obs,
-                                  pars,
-                                  guesser,
-                                  fracdev,
-                                  TdByTe,
-                                  prior=prior,
-                                  use_logpars=self.use_logpars)
+        for i in [1,2]:
+            try:
+                runner=CompositeMaxRunner(self.gal_obs,
+                                          pars,
+                                          guesser,
+                                          fracdev_clipped,
+                                          TdByTe,
+                                          prior=prior,
+                                          use_logpars=self.use_logpars)
+                runner.go(ntry=ntry)
+                break
+            except GMixRangeError:
+                print("caught GMixRange")
+                fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
 
-        runner.go(ntry=ntry)
 
         self.max_fitter=runner.fitter
 
@@ -272,8 +283,14 @@ class CompositeBootstrapper(Bootstrapper):
             raise GalFailure("failed to fit galaxy with maxlike")
 
         res['TdByTe'] = TdByTe
-        res['fracdev'] = fres['fracdev']
+        res['fracdev'] = fracdev_clipped
+        res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
+
+        mess='        fracdev: %(fracdev_noclip).3f +/- %(fracdev_err).3f'
+        mess = mess % res
+        print(mess)
+
 
     def isample(self, ipars, prior=None):
         super(CompositeBootstrapper,self).isample(ipars,prior=prior)
@@ -282,6 +299,7 @@ class CompositeBootstrapper(Bootstrapper):
 
         ires['TdByTe']=maxres['TdByTe']
         ires['fracdev']=maxres['fracdev']
+        ires['fracdev_noclip']=maxres['fracdev_noclip']
         ires['fracdev_err']=maxres['fracdev_err']
 
     def _fit_one_model_max(self, gal_model, pars, prior=None, ntry=1):
@@ -319,9 +337,6 @@ class CompositeBootstrapper(Bootstrapper):
         if res['flags'] != 0:
             raise GalFailure("failed to fit fracdev")
 
-        mess='        fracdev: %(fracdev).3f +/- %(fracdev_err).3f'
-        mess = mess % res
-        print(mess)
 
         self.fracdev_fitter=ffitter
         return res

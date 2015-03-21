@@ -1188,14 +1188,15 @@ class NGMixFitter(FitterBase):
 
             for model in self.conf['model_pars']:
                 if model in res:
-                    self._copy_pars(sub_index, model, res)
+                    model_res=res[model]['res']
+                    self._copy_pars(sub_index, model, model_res)
 
-    def _copy_pars(self, sub_index, model, allres):
+    def _copy_pars(self, sub_index, model, res):
         """
         Copy from the result dict to the output array
         """
 
-        res = allres[model]['res']
+        #res = allres[model]['res']
 
         n=Namer(model)
 
@@ -1226,6 +1227,7 @@ class NGMixFitter(FitterBase):
         if model=='cm' and 'fracdev' in res:
             self.data[n('TdByTe')][sub_index] = res['TdByTe']
             self.data[n('fracdev')][sub_index] = res['fracdev']
+            self.data[n('fracdev_noclip')][sub_index] = res['fracdev_noclip']
             self.data[n('fracdev_err')][sub_index] = res['fracdev_err']
 
 
@@ -1317,6 +1319,7 @@ class NGMixFitter(FitterBase):
             if model == 'cm':
                 dt += [( n('TdByTe'),'f8'),
                        ( n('fracdev'),'f8'),
+                       ( n('fracdev_noclip'),'f8'),
                        ( n('fracdev_err'),'f8')]
 
             if conf['do_shear']:
@@ -1352,6 +1355,7 @@ class NGMixFitter(FitterBase):
 
             if model == 'cm':
                 data[n('fracdev')] = DEFVAL
+                data[n('fracdev_noclip')] = DEFVAL
                 data[n('fracdev_err')] = PDEFVAL
                 data[n('TdByTe')] = DEFVAL
 

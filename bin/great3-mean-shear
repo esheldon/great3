@@ -181,6 +181,46 @@ def do_sfit_select(data, conf, cuts, model):
 
         logic = logic & Ts2n_logic
 
+    if 'fracdev_max' in cuts:
+        fdmax=cuts['fracdev_max']
+        fd=data[n('fracdev')]
+        elogic = (fd >= 0) & (fd < fdmax)
+        w,=where(elogic)
+        if w.size != data.size:
+            print("found %d/%d fracdev < %s" % (w.size,data.size,fdmax))
+
+        logic = logic & elogic
+
+
+    if 'fracdev_maxerr' in cuts:
+        femax=cuts['fracdev_maxerr']
+        elogic = (data[n('fracdev_err')] < femax)
+        w,=where(elogic)
+        if w.size != data.size:
+            print("found %d/%d fracdev_err < %s" % (w.size,data.size,femax))
+
+        logic = logic & elogic
+
+    if 'fracexp_mins2n' in cuts:
+
+        s2n_min = cuts['fracexp_mins2n']
+
+        fdev=data[ n('fracdev') ]
+        fexp = 1.0-fdev
+        fdev_err=data[ n('fracdev_err') ]
+
+        fexp_s2n = fexp/fdev_err
+
+        elogic = (numpy.abs(fexp) <= 1.0) & (fexp_s2n > s2n_min)
+
+        w,=where(elogic)
+        if w.size != data.size:
+            print("found %d/%d fracexp_s2n > %s" % (w.size,data.size,s2n_min))
+
+        logic = logic & elogic
+
+
+
 
     if 'efficiency_min' in cuts:
         effmin=cuts['efficiency_min']
