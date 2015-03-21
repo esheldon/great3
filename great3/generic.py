@@ -261,3 +261,29 @@ class Namer(object):
             return '%s_%s' % (self.front, name)
 
 
+'''
+t['com_T']
+t['com_e']
+t['com_flux']
+
+t['comp_T']
+t['comp_e']
+t['comp_flux']
+
+t['c_T']
+t['c_e']
+t['c_flux']
+
+t['cmodel_T']
+t['cmodel_e']
+t['cmodel_flux']
+
+t['cm_T']
+t['cm_e']
+t['cm_flux']
+
+t['cmod_T']
+t['cmod_e']
+t['cmod_flux']
+
+'''
