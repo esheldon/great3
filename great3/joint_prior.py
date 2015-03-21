@@ -6,7 +6,11 @@ import ngmix
 from ngmix.joint_prior import JointPriorTF, JointPriorSimpleHybrid
 
 
-def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds=True):
+def make_joint_prior_simple(type,
+                            cen_width,
+                            g_prior_during=True,
+                            g_prior_type=None,
+                            with_TF_bounds=True):
     """
     Make a joint prior 
 
@@ -15,7 +19,7 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
 
     if 'rgc' in type:
         """
-        e.g. rg302-rgc-deep01
+        e.g. g302-rgc-deep02
 
         this GPriorGreatDES is very noisy for recovering shear, might want to
         use essentially *anything* else, even BA (should test in my sims)
@@ -36,8 +40,13 @@ def make_joint_prior_simple(type, cen_width, g_prior_during=True, with_TF_bounds
         cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
 
         if g_prior_during:
-            g_prior_pars = [1.0, 4303.78, 0.0666206, 0.607922]
-            g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
+            if g_prior_type is not None:
+                assert g_prior_type=='ba',"if g_prior_type specified must be 'ba'"
+                sigma=0.3
+                g_prior = ngmix.priors.GPriorBA(sigma)
+            else:
+                g_prior_pars = [1.0, 6680.0, 0.0509, 0.733]
+                g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
         else:
             g_prior = ngmix.priors.ZDisk2D(1.0)
 
