@@ -20,8 +20,6 @@ parser=OptionParser(__doc__)
 
 parser.add_option('--with-psf',action='store_true',
                   help="include psf info. File name is different.")
-parser.add_option('--use-weights',action='store_true',
-                  help="use weights for lensfit style")
 
 def get_finite_logic(data, model):
     """
@@ -58,9 +56,7 @@ def get_shear_expand(conf):
 
 def do_nfit_select(data, conf, cuts):
     model=conf['fit_models'][0]
-    model_flagname='%s_flags' % model
-    s2n_name='%s_s2n_w' % model
-    arate_name='%s_arate' % model
+    n=Namer(model)
 
     logic = data['flags'] == 0
 
@@ -68,10 +64,10 @@ def do_nfit_select(data, conf, cuts):
     if w.size != data.size:
         print("found %d/%d with flags==0" % (w.size,data.size))
 
-    model_flag_logic = (data[model_flagname]==0)
+    model_flag_logic = (data[n('flags')]==0)
     w,=where(model_flag_logic)
     if w.size != data.size:
-        print("found %d/%d with %s==0" % (w.size,data.size,model_flagname))
+        print("found %d/%d with %s==0" % (w.size,data.size,n('flags')))
 
     logic = logic & model_flag_logic
 
@@ -85,18 +81,30 @@ def do_nfit_select(data, conf, cuts):
 
     if 's2n_range' in cuts:
         s2nr = cuts['s2n_range']
-        s2n_logic = (  (data[s2n_name] > s2nr[0])
-                     & (data[s2n_name] < s2nr[1]) )
+        s2n_logic = (  (data[n('s2n_w')] > s2nr[0])
+                     & (data[n('s2n_w')] < s2nr[1]) )
         w,=where(s2n_logic)
         if w.size != data.size:
             print("found %d/%d s2n in [%s,%s]" % (w.size,data.size,s2nr[0],s2nr[1]))
 
         logic = logic & s2n_logic
 
+    if 'Ts2n_min' in cuts:
+        Ts2n_min=cuts['Ts2n_min']
+        print("doing Ts2n >",Ts2n_min)
+        Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
+        Ts2n_logic = (Ts2n > Ts2n_min)
+        w,=where(Ts2n_logic)
+        if w.size != data.size:
+            print("found %d/%d Ts2n > %s" % (w.size,data.size,Ts2n_min))
+
+        logic = logic & Ts2n_logic
+
+
     if 'arate_range' in cuts:
         arange=cuts['arate_range']
-        arate_logic = (  (data[arate_name] > arange[0])
-                       & (data[arate_name] < arange[1]) )
+        arate_logic = (  (data[n('arate')] > arange[0])
+                       & (data[n('arate')] < arange[1]) )
         w,=where(arate_logic)
         if w.size != data.size:
             print("found %d/%d arate in [%s,%s]" % (w.size,data.size,arange[0],arange[1]))
@@ -162,6 +170,17 @@ def do_sfit_select(data, conf, cuts, model):
             print(mess % (w.size,data.size,s2nr[0],s2nr[1]))
 
         logic = logic & tmp_logic
+
+    if 'Ts2n_min' in cuts:
+        Ts2n_min=cuts['Ts2n_min']
+        Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
+        Ts2n_logic = (Ts2n > Ts2n_min)
+        w,=where(Ts2n_logic)
+        if w.size != data.size:
+            print("found %d/%d Ts2n > %s" % (w.size,data.size,Ts2n_min))
+
+        logic = logic & Ts2n_logic
+
 
     if 'efficiency_min' in cuts:
         effmin=cuts['efficiency_min']
@@ -232,7 +251,7 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
 
     fclass = conf.get('fitter_class',None)
     if fclass is not None:
-        if fclass=='sfit':
+        if 'sfit' in fclass:
             from ngmix.lensfit import lensfit_jackknife
 
             w=do_sfit_select(data, conf, cuts, model)
