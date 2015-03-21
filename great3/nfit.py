@@ -10,7 +10,7 @@ from . import files
 from . import joint_prior
 from .generic import *
 from .constants import *
-from .bootstrapper import Bootstrapper
+from .bootstrapper import Bootstrapper, CompositeBootstrapper
 
 
 
@@ -1223,6 +1223,12 @@ class NGMixFitter(FitterBase):
         self.data[n('g')][sub_index,:] = res['g']
         self.data[n('g_cov')][sub_index,:,:] = res['g_cov']
 
+        if model=='cm' and 'fracdev' in res:
+            self.data[n('TdByTe')][sub_index] = res['TdByTe']
+            self.data[n('fracdev')][sub_index] = res['fracdev']
+            self.data[n('fracdev_err')][sub_index] = res['fracdev_err']
+
+
         if 'arate' in res:
             self.data[n('arate')][sub_index] = res['arate']
             self.data[n('tau')][sub_index] = res['tau']
@@ -1308,6 +1314,11 @@ class NGMixFitter(FitterBase):
                  (n('efficiency'),'f8'),
                 ]
 
+            if model == 'cm':
+                dt += [( n('TdByTe'),'f8'),
+                       ( n('fracdev'),'f8'),
+                       ( n('fracdev_err'),'f8')]
+
             if conf['do_shear']:
                 dt += [(n('g_sens'),'f8',2),
                        (n('P'), 'f8'),
@@ -1338,6 +1349,11 @@ class NGMixFitter(FitterBase):
             data[n('bic')] = BIG_PDEFVAL
 
             data[n('tau')] = BIG_PDEFVAL
+
+            if model == 'cm':
+                data[n('fracdev')] = DEFVAL
+                data[n('fracdev_err')] = PDEFVAL
+                data[n('TdByTe')] = DEFVAL
 
             if conf['do_shear']:
                 data[n('g_sens')] = DEFVAL
