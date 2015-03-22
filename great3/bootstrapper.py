@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 import numpy
-from numpy import array, sqrt, exp, log
+from numpy import array, sqrt, exp, log, linspace, zeros
 
 import ngmix
 from ngmix import Observation
@@ -231,6 +231,10 @@ class Bootstrapper(object):
 
 
 class CompositeBootstrapper(Bootstrapper):
+    def __init__(self, psf_obs, gal_obs, use_logpars=False, fracdev_prior=None):
+        super(CompositeBootstrapper,self).__init__(psf_obs, gal_obs, use_logpars=use_logpars)
+        self.fracdev_prior=fracdev_prior
+
     def fit_max(self, model, pars, prior=None, ntry=1):
         """
         fit the galaxy.  You must run fit_psf() successfully first
@@ -283,11 +287,12 @@ class CompositeBootstrapper(Bootstrapper):
             raise GalFailure("failed to fit galaxy with maxlike")
 
         res['TdByTe'] = TdByTe
+        res['fracdev_nfev'] = fres['nfev']
         res['fracdev'] = fracdev_clipped
         res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
 
-        mess='        fracdev: %(fracdev_noclip).3f +/- %(fracdev_err).3f'
+        mess='        nfev: %(fracdev_nfev)d fracdev: %(fracdev_noclip).3f +/- %(fracdev_err).3f'
         mess = mess % res
         print(mess)
 
@@ -325,13 +330,21 @@ class CompositeBootstrapper(Bootstrapper):
         return fitter
 
     def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
-        from ngmix.fitting import FracdevFitter
+        from ngmix.fitting import FracdevFitter, FracdevFitterMax
 
         epars=exp_fitter.get_result()['pars']
         dpars=dev_fitter.get_result()['pars']
 
-        ffitter = FracdevFitter(self.gal_obs, epars, dpars,
-                                use_logpars=self.use_logpars)
+        if self.fracdev_prior is not None:
+            ffitter = FracdevFitterMax(self.gal_obs, epars, dpars,
+                                       use_logpars=self.use_logpars,
+                                       prior=self.fracdev_prior)
+            guess=self._get_fracdev_guess(ffitter)
+            print("        guessing with:",guess)
+            ffitter.go(guess)
+        else:
+            ffitter = FracdevFitter(self.gal_obs, epars, dpars,
+                                    use_logpars=self.use_logpars)
         res=ffitter.get_result()
 
         if res['flags'] != 0:
@@ -341,6 +354,19 @@ class CompositeBootstrapper(Bootstrapper):
         self.fracdev_fitter=ffitter
         return res
 
+    def _get_fracdev_guess(self, fitter):
+        #from biggles import plot
+        tests=linspace(-0.5,1.1,17)
+        lnps=zeros(tests.size)
+        for i in xrange(tests.size):
+            lnps[i] = fitter.calc_lnprob(tests[i:i+1])
+
+        #plot(tests, lnps)
+        #key=raw_input('hit a key: ')
+
+        ibest=lnps.argmax()
+        guess=tests[ibest] 
+        return guess
 
     def _get_TdByTe(self, exp_fitter, dev_fitter):
         epars=exp_fitter.get_result()['pars']

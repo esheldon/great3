@@ -65,6 +65,8 @@ def fit_fracdev_run(run, model, **keys):
 
     keys['noshape']=True
     keys['dolog']=True
+    keys['min_covar']=keys.get('min_covar',1.0e-4)
+    keys['ngauss']=keys.get('ngauss',5)
 
     data=read_all(run, **keys)
 
@@ -74,7 +76,12 @@ def fit_fracdev_run(run, model, **keys):
         n=Namer(model)
 
     fracdev = data[ n('fracdev') ]
-    w,=where( (fracdev > -2) & (fracdev < 2) & (fracdev != 0.0) & (fracdev != 1.0) )
+    fracdev_err = data[ n('fracdev_err') ]
+    w,=where(  (fracdev > -2)
+             & (fracdev < 2)
+             & (fracdev != 0.0)
+             & (fracdev != 1.0)
+             & (fracdev_err < 0.1) )
     fracdev = fracdev[w]
 
     pars = zeros( (fracdev.size, 1) )
@@ -447,6 +454,8 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
         tab=biggles.Table(nrow,ncol)
         plin = _plot_single(pars[:,0], samples[:,0], do_ylog=False)
         plog = _plot_single(pars[:,0], samples[:,0], do_ylog=True)
+        plin.xlabel='fracdev'
+        plog.xlabel='fracdev'
         tab[0,0]=plin
         tab[0,1]=plog
     else:
@@ -493,7 +502,7 @@ def _plot_single(data, samples, do_ylog=False):
     valmax=data.max()
 
     std = data.std()
-    binsize=0.1*std
+    binsize=0.05*std
 
     ph = biggles.make_histc(data, min=valmin, max=valmax, binsize=binsize,  ylog=do_ylog, norm=1)
     sample_ph= biggles.make_histc(samples, min=valmin, max=valmax, binsize=binsize, color='red', ylog=do_ylog, norm=1)

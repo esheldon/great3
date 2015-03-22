@@ -136,6 +136,27 @@ class FitterBase(object):
 
         self.index_list = numpy.arange(obj_range[0],obj_range[1]+1)
 
+    def _set_fracdev_prior(self):
+        prun=self.conf.get('fracdev_prior',None)
+        if prun is not None:
+            from ngmix.gmix import GMixND
+            pars=files.read_prior(experiment="real_galaxy",
+                                  obs_type="ground",
+                                  shear_type="constant",
+                                  run=prun,
+                                  partype="fracdev",
+                                  ext="fits")
+            means=pars['means'].reshape(pars['means'].size,1)
+
+            fracdev_prior=GMixND(pars['weights'],
+                                 means,
+                                 pars['covars'])
+
+ 
+        else:
+            fracdev_prior=None
+        self.fracdev_prior=fracdev_prior
+
     def _set_field_data(self):
         deep=self.conf.get('deep',False)
         if deep:

@@ -107,9 +107,16 @@ class CompositeLMFitter(LMFitter):
     """
     ISampler using a composite model
     """
+    def __init__(self, **keys):
+        super(CompositeLMFitter,self).__init__(**keys)
+
+        self._set_fracdev_prior()
+
+
     def _get_bootstrapper(self):
         boot=CompositeBootstrapper(self.psf_obs,
                                    self.gal_obs,
+                                   fracdev_prior=self.fracdev_prior,
                                    use_logpars=True)
         return boot
 
@@ -234,9 +241,15 @@ class CompositeISampleFitter(ISampleFitter):
     """
     ISampler using a composite model
     """
+    def __init__(self, **keys):
+        super(CompositeISampleFitter,self).__init__(**keys)
+
+        self._set_fracdev_prior()
+
     def _get_bootstrapper(self):
         boot=CompositeBootstrapper(self.psf_obs,
                                    self.gal_obs,
+                                   fracdev_prior=self.fracdev_prior,
                                    use_logpars=True)
         return boot
 
