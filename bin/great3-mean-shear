@@ -287,6 +287,8 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
     print("-"*70)
     data=files.read_output(**conf)
 
+    ntot=data.size
+
     res={}
 
     fclass = conf.get('fitter_class',None)
@@ -295,6 +297,7 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
             from ngmix.lensfit import lensfit_jackknife
 
             w=do_sfit_select(data, conf, cuts, model)
+            nkeep=w.size
             wts=get_weights(data[w],model,cuts)
             
             chunksize = w.size//1000
@@ -331,6 +334,8 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
     else:
         raise ValueError("unsupported run type: '%s'" % conf['run'])
 
+    res['ntot']=ntot
+    res['nkeep']=nkeep
     return res
 
 def do_write_with_psf(subid, res, fobj):
@@ -382,6 +387,8 @@ def main():
     outname=files.get_shear_file(with_psf=with_psf, model=model, **conf)
     print("writing to output file:",outname)
 
+    ntot=0
+    nkeep=0
     with open(outname,'w') as fobj:
         for subid in xrange(nsub):
             res=do_calc_mean_shear(conf, cuts, subid, model, 
@@ -397,6 +404,10 @@ def main():
 
             print('%d %g +/- %g  %g +/- %g' % out2)
 
+            ntot += res['ntot']
+            nkeep += res['nkeep']
+
+    print("used %d/%d: %g" % (nkeep, ntot, float(nkeep)/ntot))
     print("output in:",outname)
 
 main()
