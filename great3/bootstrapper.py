@@ -253,10 +253,13 @@ class CompositeBootstrapper(Bootstrapper):
         print("    fitting fracdev")
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
 
-        fracdev_range=pars.get('fracdev_range',[0.0, 1.0])
+        fracdev_range=pars.get('fracdev_range',[-2.0, 2.0])
         fracdev = fres['fracdev']
         fracdev_clipped = fres['fracdev'].clip(min=fracdev_range[0],max=fracdev_range[1])
-        #print("using fracdev:",fracdev_clipped)
+
+        mess='        nfev: %d fracdev: %.3f +/- %.3f clipped: %.3f'
+        print(mess % (fres['nfev'],fracdev,fres['fracdev_err'],fracdev_clipped))
+
 
         TdByTe = self._get_TdByTe(exp_fitter, dev_fitter)
 
@@ -291,10 +294,6 @@ class CompositeBootstrapper(Bootstrapper):
         res['fracdev'] = fracdev_clipped
         res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
-
-        mess='        nfev: %(fracdev_nfev)d fracdev: %(fracdev_noclip).3f +/- %(fracdev_err).3f'
-        mess = mess % res
-        print(mess)
 
 
     def isample(self, ipars, prior=None):
