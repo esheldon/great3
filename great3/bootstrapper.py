@@ -267,8 +267,8 @@ class CompositeBootstrapper(Bootstrapper):
         guesser=self._get_max_guesser(prior=prior)
 
         print("    fitting composite")
-        #for i in [1,2]:
-        for i in [1]:
+        for i in [1,2]:
+        #for i in [1]:
             try:
                 runner=CompositeMaxRunner(self.gal_obs,
                                           pars,
@@ -281,9 +281,11 @@ class CompositeBootstrapper(Bootstrapper):
                 break
             except GMixRangeError:
                 print("caught GMixRange")
-                raise GalFailure("problem with fracdev")
-                #fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
+                #raise GalFailure("problem with fracdev")
+                fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
 
+        if not hasattr(runner,'fitter'):
+            raise GalFailure("problem with fracdev")
 
         self.max_fitter=runner.fitter
 
