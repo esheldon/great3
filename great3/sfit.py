@@ -39,7 +39,7 @@ class LMFitter(NGMixFitter):
             self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
 
         max_pars=self.conf['max_pars']
-        for model in self.conf['model_pars']:
+        for i,model in enumerate(self.conf['model_pars']):
             try:
 
                 prior=self.priors[model]
