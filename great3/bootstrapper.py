@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import numpy
 from numpy import array, sqrt, exp, log, linspace, zeros
-from numpy.random import randn
 
 import ngmix
 from ngmix import Observation
@@ -268,7 +267,6 @@ class CompositeBootstrapper(Bootstrapper):
 
         print("    fitting composite")
         for i in [1,2]:
-        #for i in [1]:
             try:
                 runner=CompositeMaxRunner(self.gal_obs,
                                           pars,
@@ -281,11 +279,8 @@ class CompositeBootstrapper(Bootstrapper):
                 break
             except GMixRangeError:
                 print("caught GMixRange")
-                #raise GalFailure("problem with fracdev")
                 fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
 
-        if not hasattr(runner,'fitter'):
-            raise GalFailure("problem with fracdev")
 
         self.max_fitter=runner.fitter
 
@@ -299,6 +294,7 @@ class CompositeBootstrapper(Bootstrapper):
         res['fracdev'] = fracdev_clipped
         res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
+
 
 
     def isample(self, ipars, prior=None):
@@ -336,19 +332,15 @@ class CompositeBootstrapper(Bootstrapper):
     def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
         from ngmix.fitting import FracdevFitter, FracdevFitterMax
 
-        eres=exp_fitter.get_result()
-        epars=eres['pars']
+        epars=exp_fitter.get_result()['pars']
         dpars=dev_fitter.get_result()['pars']
 
-        s2n=eres['s2n_w']
-
-        if (self.fracdev_prior is not None 
-                and s2n < self.fracdev_prior.s2n_max):
-        #if True:
+        if self.fracdev_prior is not None:
             ffitter = FracdevFitterMax(self.gal_obs, epars, dpars,
                                        use_logpars=self.use_logpars,
                                        prior=self.fracdev_prior)
             guess=self._get_fracdev_guess(ffitter)
+            print("        guessing with:",guess)
             ffitter.go(guess)
         else:
             ffitter = FracdevFitter(self.gal_obs, epars, dpars,
@@ -369,17 +361,11 @@ class CompositeBootstrapper(Bootstrapper):
         for i in xrange(tests.size):
             lnps[i] = fitter.calc_lnprob(tests[i:i+1])
 
-
-        ibest=lnps.argmax()
-
-        guess0=tests[ibest]
-        guess=guess0 + 0.001*randn()
-
-        print("        guessing with:",guess0,guess)
-
         #plot(tests, lnps)
         #key=raw_input('hit a key: ')
 
+        ibest=lnps.argmax()
+        guess=tests[ibest] 
         return guess
 
     def _get_TdByTe(self, exp_fitter, dev_fitter):
