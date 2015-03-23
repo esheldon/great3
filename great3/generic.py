@@ -152,9 +152,13 @@ class FitterBase(object):
                                  means,
                                  pars['covars'])
 
- 
+            s2n_max=\
+                    self.conf.get('fracdev_prior_s2nmax',1000.0)
+            fracdev_prior.s2n_max=s2n_max
+
         else:
             fracdev_prior=None
+
         self.fracdev_prior=fracdev_prior
 
     def _set_field_data(self):

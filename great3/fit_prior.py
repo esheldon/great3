@@ -18,7 +18,7 @@ MIN_COVAR=1.0e-12
 GMAX=0.985
 
 
-def fit_joint_run(run, model, **keys):
+def fit_joint_TF_run(run, model, **keys):
     """
     Fit a joint prior to the fields from the given run
 
@@ -81,13 +81,72 @@ def fit_fracdev_run(run, model, **keys):
              & (fracdev < 2)
              & (fracdev != 0.0)
              & (fracdev != 1.0)
-             & (fracdev_err < 0.1) )
+             #& (fracdev_err < 0.1)
+            )
     fracdev = fracdev[w]
 
     pars = zeros( (fracdev.size, 1) )
     pars[:,0] = fracdev
 
     conf['partype']='fracdev'
+
+    fits_name=files.get_prior_file(ext='fits', **conf)
+    eps_name=files.get_prior_file(ext='eps', **conf)
+    print(fits_name)
+    print(eps_name)
+
+    fit_joint_noshape(pars,
+                      model,
+                      fname=fits_name,
+                      eps=eps_name,
+                      **keys)
+
+
+def fit_joint_TF_fracdev_run(run, model, **keys):
+    """
+    Fit a joint prior to the fields from the given run
+
+    Calls more generic stuff such as fit_joint_noshape
+    """
+    import fitsio
+    from esutil.numpy_util import between
+    conf=files.read_config(run)
+
+    keys['noshape']=True
+    keys['dolog']=True
+    keys['min_covar']=keys.get('min_covar',1.0e-4)
+    #keys['ngauss']=keys.get('ngauss',5)
+
+    data=read_all(run, **keys)
+
+    if model=='cm' and 'composite_g' in data.dtype.names:
+        n=Namer('composite')
+    else:
+        n=Namer(model)
+
+    T=data[n('pars')][:,4]
+    F=data[n('pars')][:,5]
+    fracdev = data[ n('fracdev') ]
+    fracdev_err = data[ n('fracdev_err') ]
+    w,=where(
+        between(T, -7.0, 2.0)
+        & between(F, -1.0,4.0)
+        #(fracdev > -2)
+        #& (fracdev < 2)
+        & between(fracdev, -1.0, 1.5)
+        & (fracdev != 0.0)
+        & (fracdev != 1.0)
+        #& (fracdev_err < 0.1)
+    )
+
+    data=data[w]
+
+    pars = zeros( (w.size, 3) )
+    pars[:,0] = data[n('pars')][:,4]
+    pars[:,1] = data[n('pars')][:,5]
+    pars[:,2] = data[n('fracdev')]
+
+    conf['partype']='TF-fracdev'
 
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
@@ -269,9 +328,10 @@ _par_labels_log={}
 _par_labels_log[2] = [r'$log(T)$',
                       r'$log(F)$']
 
-_par_labels_log[3] = [r'$|\eta|$',
-                      r'$log(T)$',
-                      r'$log(F)$']
+_par_labels_log[3] = [r'$log(T)$',
+                      r'$log(F)$',
+                      'fracdev']
+
 _par_labels_log[4] = [r'$|\eta|$',
                       r'$log(T)$',
                       r'$log(F_b)$',
@@ -464,7 +524,7 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
 
 
         for dim in xrange(ndim):
-            plt = _plot_single(pars[:,dim], samples[:,dim])
+            plt = _plot_single(pars[:,dim], samples[:,dim],do_ylog=True)
             if par_labels is not None:
                 plt.xlabel=par_labels[dim]
             else:
