@@ -181,6 +181,17 @@ def do_sfit_select(data, conf, cuts, model):
 
         logic = logic & Ts2n_logic
 
+    if 'cut_fracdev_exact' in cuts:
+        fd=data[n('fracdev')]
+        elogic = (fd != 0.) & (fd != 1.0)
+        w,=where(elogic)
+        if w.size != data.size:
+            print("found %d/%d fracdev exact" % (w.size,data.size))
+
+        logic = logic & elogic
+
+
+
     if 'fracdev_max' in cuts:
         fdmax=cuts['fracdev_max']
         fd=data[n('fracdev')]
