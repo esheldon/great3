@@ -49,7 +49,7 @@ def main():
     storage_dir=great3.files.get_storage_dir()
     
     epsfile=get_epsfile(conf['run'],conf['cut'])
-    q = great3sims.metrics.evaluate.q_constant_err(shfile,
+    res = great3sims.metrics.evaluate.q_constant_err(shfile,
                                                    conf['experiment'],
                                                    conf['obs_type'],
                                                    storage_dir=storage_dir,
@@ -58,5 +58,16 @@ def main():
                                                    show=args.show,
                                                    pretty_print=True)
     
+    head="%10s " * len(res)
+    head = head % ('Q','m+','m+_err','mx','mx_err','c+','c+_err','cx','cx_err')
+
+    mess="%10.1f" + "%10.6f " * (len(res)-1)
+    mess=mess.strip()
+    mess=mess % (res['Q'],
+                 res['m1'],res['m1_err'],res['m2'],res['m2_err'],
+                 res['c1'],res['c1_err'],res['c2'],res['c2_err'])
+
+    print(head)
+    print(mess)
 
 main()
