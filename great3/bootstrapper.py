@@ -1,7 +1,8 @@
 from __future__ import print_function
 
 import numpy
-from numpy import array, sqrt, exp, log, linspace, zeros
+from numpy import where, array, sqrt, exp, log, linspace, zeros
+from numpy import isfinite
 
 import ngmix
 from ngmix import Observation
@@ -231,9 +232,14 @@ class Bootstrapper(object):
 
 
 class CompositeBootstrapper(Bootstrapper):
-    def __init__(self, psf_obs, gal_obs, use_logpars=False, fracdev_prior=None):
-        super(CompositeBootstrapper,self).__init__(psf_obs, gal_obs, use_logpars=use_logpars)
+    def __init__(self, psf_obs, gal_obs,
+                 use_logpars=False, fracdev_prior=None):
+        super(CompositeBootstrapper,self).__init__(psf_obs,
+                                                   gal_obs,
+                                                   use_logpars=use_logpars)
         self.fracdev_prior=fracdev_prior
+        #self.fracdev_tests=linspace(-0.5,1.1,17)
+        self.fracdev_tests=linspace(-1.0,1.5,26)
 
     def fit_max(self, model, pars, prior=None, ntry=1):
         """
@@ -252,6 +258,7 @@ class CompositeBootstrapper(Bootstrapper):
 
         print("    fitting fracdev")
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
+        #fres=self._fit_fracdev_grid(exp_fitter, dev_fitter, ntry=ntry)
 
         fracdev_range=pars.get('fracdev_range',[-2.0, 2.0])
         fracdev = fres['fracdev']
@@ -329,6 +336,20 @@ class CompositeBootstrapper(Bootstrapper):
 
         return fitter
 
+    def _fit_fracdev_grid(self, exp_fitter, dev_fitter, ntry=1):
+        """
+        just use the grid
+        """
+        fracdev=self._get_fracdev_guess(ffitter)
+
+        res={'flags':0,
+             'fracdev':fracdev,
+             'fracdev_err':1.0,
+             'nfev':self.fracdev_tests.size}
+
+        return res
+
+
     def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
         from ngmix.fitting import FracdevFitter, FracdevFitterMax
 
@@ -340,7 +361,11 @@ class CompositeBootstrapper(Bootstrapper):
                                        use_logpars=self.use_logpars,
                                        prior=self.fracdev_prior)
             guess=self._get_fracdev_guess(ffitter)
-            print("        guessing with:",guess)
+
+            print("        fracdev guess:",guess)
+            if guess is None:
+                raise GalFailure("failed to fit fracdev")
+
             ffitter.go(guess)
         else:
             ffitter = FracdevFitter(self.gal_obs, epars, dpars,
@@ -355,17 +380,22 @@ class CompositeBootstrapper(Bootstrapper):
         return res
 
     def _get_fracdev_guess(self, fitter):
-        #from biggles import plot
-        tests=linspace(-0.5,1.1,17)
+        tests=self.fracdev_tests
         lnps=zeros(tests.size)
         for i in xrange(tests.size):
             lnps[i] = fitter.calc_lnprob(tests[i:i+1])
 
-        #plot(tests, lnps)
-        #key=raw_input('hit a key: ')
+        w,=where(isfinite(lnps))
+        if w.size == 0:
+            return None
 
-        ibest=lnps.argmax()
-        guess=tests[ibest] 
+        if False:
+            from biggles import plot
+            plot(tests[w], lnps[w])
+            key=raw_input('hit a key: ')
+
+        ibest=lnps[w].argmax()
+        guess=tests[w[ibest]]
         return guess
 
     def _get_TdByTe(self, exp_fitter, dev_fitter):
