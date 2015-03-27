@@ -140,20 +140,25 @@ class FitterBase(object):
         prun=self.conf.get('fracdev_prior',None)
         if prun is not None:
             from ngmix.gmix import GMixND
+
+            partype=self.conf.get('fracdev_prior_type','fracdev')
             pars=files.read_prior(experiment="real_galaxy",
                                   obs_type="ground",
                                   shear_type="constant",
                                   run=prun,
-                                  partype="fracdev",
+                                  partype=partype,
                                   ext="fits")
-            means=pars['means'].reshape(pars['means'].size,1)
+
+            means=pars['means']
+            if len(means.shape)==1:
+                means=means.reshape(pars['means'].size,1)
 
             fracdev_prior=GMixND(pars['weights'],
                                  means,
                                  pars['covars'])
 
             s2n_max=\
-                    self.conf.get('fracdev_prior_s2nmax',1000.0)
+                    self.conf.get('fracdev_prior_s2nmax',1.0e9)
             fracdev_prior.s2n_max=s2n_max
 
         else:
