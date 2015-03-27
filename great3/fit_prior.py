@@ -102,6 +102,60 @@ def fit_fracdev_run(run, model, **keys):
                       **keys)
 
 
+def fit_joint_F_fracdev_run(run, model, **keys):
+    """
+    Fit a joint prior to the fields from the given run
+
+    Calls more generic stuff such as fit_joint_noshape
+    """
+    import fitsio
+    from esutil.numpy_util import between
+    conf=files.read_config(run)
+
+    keys['noshape']=True
+    keys['dolog']=True
+    keys['min_covar']=keys.get('min_covar',1.0e-4)
+    #keys['ngauss']=keys.get('ngauss',5)
+
+    data=read_all(run, **keys)
+
+    if model=='cm' and 'composite_g' in data.dtype.names:
+        n=Namer('composite')
+    else:
+        n=Namer(model)
+
+    F=data[n('pars')][:,5]
+    fracdev = data[ n('fracdev') ]
+    fracdev_err = data[ n('fracdev_err') ]
+    w,=where(
+        between(F, -1.0,4.0)
+        & between(fracdev, -1.0, 1.5)
+        & (fracdev != 0.0)
+        & (fracdev != 1.0)
+    )
+
+    data=data[w]
+
+    pars = zeros( (w.size, 2) )
+    pars[:,0] = data[n('pars')][:,5]
+    pars[:,1] = data[n('fracdev')]
+
+    conf['partype']='F-fracdev'
+
+    fits_name=files.get_prior_file(ext='fits', **conf)
+    eps_name=files.get_prior_file(ext='eps', **conf)
+    print(fits_name)
+    print(eps_name)
+
+    fit_joint_noshape(pars,
+                      model,
+                      fname=fits_name,
+                      eps=eps_name,
+                      **keys)
+
+
+
+
 def fit_joint_TF_fracdev_run(run, model, **keys):
     """
     Fit a joint prior to the fields from the given run
