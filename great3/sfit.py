@@ -25,6 +25,9 @@ class LMFitter(NGMixFitter):
     def _dofits(self):
         boot=self._get_bootstrapper()
 
+        # find the center and reset the jacobian
+        boot.find_cen()
+
         sigma_guess=self.conf['psf_fwhm_guess']/2.35
         Tguess=2*sigma_guess**2
         boot.fit_psf(self.conf['psf_model'],
@@ -66,6 +69,7 @@ class LMFitter(NGMixFitter):
         boot=Bootstrapper(self.psf_obs,
                           self.gal_obs,
                           use_logpars=True)
+
         return boot
 
 
@@ -126,6 +130,8 @@ class ISampleFitter(LMFitter):
     def _dofits(self):
 
         boot=self._get_bootstrapper()
+        # find the center and reset the jacobian
+        boot.find_cen()
 
         sigma_guess=self.conf['psf_fwhm_guess']/2.35
         Tguess=2*sigma_guess**2
