@@ -46,6 +46,45 @@ class Bootstrapper(object):
             raise RuntimeError("you need to run isample() successfully first")
         return self.isampler
 
+    def find_cen(self):
+        """
+        run a single-gaussian em fit, just to find the center
+
+        Modify the jacobian center accordingly.
+
+        If it fails, don't modify anything
+        """
+        from ngmix.em import GMixEM, prep_image
+        from ngmix import GMix
+
+        jacob=self.gal_obs.jacobian
+
+        row,col=jacob.get_cen()
+
+        guess=array([1.0, # p
+                     row, # row in current jacobian coords
+                     col, # col in current jacobian coords
+                     4.0,
+                     0.0,
+                     4.0])
+
+        gm_guess = GMix(pars=guess)
+
+        im,sky = prep_image(self.gal_obs.image)
+        obs = Observation(im)
+        fitter=GMixEM(obs)
+        fitter.go(gm_guess, sky, maxiter=4000) 
+        res=fitter.get_result()
+        if res['flags']==0:
+            gm=fitter.get_gmix()
+            row,col=gm.get_cen()
+            print("        setting jacobian cen to:",row,col,
+                  "numiter:",res['numiter'])
+            jacob.set_cen(row,col)
+        else:
+            print("        failed to find cen")
+
+
 
     def fit_psf(self, psf_model, Tguess=None, ntry=4):
         """
@@ -258,11 +297,12 @@ class CompositeBootstrapper(Bootstrapper):
 
         print("    fitting fracdev")
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
-        #fres=self._fit_fracdev_grid(exp_fitter, dev_fitter, ntry=ntry)
 
-        frange=pars.get('fracdev_range',[-2.0, 2.0])
         fracdev = fres['fracdev']
-        fracdev_clipped = fracdev.clip(min=frange[0],max=frange[1])
+        fracdev_clipped = self._maybe_clip(exp_fitter,
+                                           dev_fitter,
+                                           pars,
+                                           fracdev)
 
         mess='        nfev: %d fracdev: %.3f +/- %.3f clipped: %.3f'
         print(mess % (fres['nfev'],fracdev,fres['fracdev_err'],fracdev_clipped))
@@ -302,6 +342,32 @@ class CompositeBootstrapper(Bootstrapper):
         res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
 
+    def _maybe_clip(self, efitter, dfitter, pars, fracdev):
+        """
+        allow the user to send a s/n above which the clip
+        is applied.  Default is effectively no clipping,
+        since fracdev_s2n_clip_min defaults to 1.0e9
+        """
+        eres=efitter.get_result()
+        dres=dfitter.get_result()
+
+        s2n_max=max( eres['s2n_w'], dres['s2n_w'] )
+
+        clip_min = pars.get('fracdev_s2n_clip_min',1.e9)
+        if s2n_max > clip_min:
+            print("        clipping")
+            frange=pars.get('fracdev_range',[-2.0, 2.0])
+            fracdev_clipped = fracdev.clip(min=frange[0],max=frange[1])
+        else:
+            fracdev_clipped = 0.0 + fracdev
+
+        if False and s2n_max > 50:
+            import images
+            images.multiview(self.gal_obs.image)
+            key=raw_input('hit a key: ')
+            if key=='q':
+                stop
+        return fracdev_clipped
 
 
     def isample(self, ipars, prior=None):
