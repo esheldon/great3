@@ -159,7 +159,11 @@ class FitterBase(object):
 
             s2n_max=\
                     self.conf.get('fracdev_prior_s2nmax',1.0e9)
+            fracdev_range = self.conf.get('fracdev_range',[-2,2])
             fracdev_prior.s2n_max=s2n_max
+            # not applied during prior evaluation, just stored
+            # here for convenience
+            fracdev_prior.fracdev_range=fracdev_range
 
         else:
             fracdev_prior=None

@@ -260,9 +260,9 @@ class CompositeBootstrapper(Bootstrapper):
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
         #fres=self._fit_fracdev_grid(exp_fitter, dev_fitter, ntry=ntry)
 
-        fracdev_range=pars.get('fracdev_range',[-2.0, 2.0])
+        frange=pars.get('fracdev_range',[-2.0, 2.0])
         fracdev = fres['fracdev']
-        fracdev_clipped = fres['fracdev'].clip(min=fracdev_range[0],max=fracdev_range[1])
+        fracdev_clipped = fracdev.clip(min=frange[0],max=frange[1])
 
         mess='        nfev: %d fracdev: %.3f +/- %.3f clipped: %.3f'
         print(mess % (fres['nfev'],fracdev,fres['fracdev_err'],fracdev_clipped))
@@ -353,13 +353,26 @@ class CompositeBootstrapper(Bootstrapper):
     def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
         from ngmix.fitting import FracdevFitter, FracdevFitterMax
 
-        epars=exp_fitter.get_result()['pars']
-        dpars=dev_fitter.get_result()['pars']
+        eres=exp_fitter.get_result()
+        dres=dev_fitter.get_result()
+        epars=eres['pars']
+        dpars=dres['pars']
 
-        if self.fracdev_prior is not None:
+        #s2n_max=max( eres['s2n_w'], dres['s2n_w'] )
+        #print("s2n exp:",eres['s2n_w'],"dev:",dres['s2n_w'])
+        #s2n_max=min( eres['s2n_w'], dres['s2n_w'] )
+
+        #if s2n_max > 35.0 or self.fracdev_prior is None:
+
+        fprior=self.fracdev_prior
+        if fprior is None:
+            ffitter = FracdevFitter(self.gal_obs, epars, dpars,
+                                    use_logpars=self.use_logpars)
+        else:
+
             ffitter = FracdevFitterMax(self.gal_obs, epars, dpars,
                                        use_logpars=self.use_logpars,
-                                       prior=self.fracdev_prior)
+                                       prior=fprior)
             guess=self._get_fracdev_guess(ffitter)
 
             print("        fracdev guess:",guess)
@@ -367,9 +380,7 @@ class CompositeBootstrapper(Bootstrapper):
                 raise GalFailure("failed to fit fracdev")
 
             ffitter.go(guess)
-        else:
-            ffitter = FracdevFitter(self.gal_obs, epars, dpars,
-                                    use_logpars=self.use_logpars)
+
         res=ffitter.get_result()
 
         if res['flags'] != 0:
