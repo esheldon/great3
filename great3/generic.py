@@ -266,7 +266,9 @@ class FitterBase(object):
             ('processed','i2'),
             ('flags','i4'),
             ('psf_g','f8',2), # always fit 1 gauss with em to psf
-            ('psf_T','f8')]
+            ('psf_T','f8'),
+            ('psf_flux','f8'),
+            ('psf_flux_err','f8')]
 
         return dt
 

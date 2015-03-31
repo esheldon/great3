@@ -218,6 +218,8 @@ class Bootstrapper(object):
         self.psf_flux = res['flux']
         self.psf_flux_err = res['flux_err']
 
+        print("    psf flux: %.3f +/- %.3f" % (res['flux'],res['flux_err']))
+
         self.psf_flux_fitter=fitter
 
 
@@ -341,6 +343,8 @@ class CompositeBootstrapper(Bootstrapper):
         res['fracdev'] = fracdev_clipped
         res['fracdev_noclip'] = fracdev
         res['fracdev_err'] = fres['fracdev_err']
+        res['psf_flux'] = self.psf_flux
+        res['psf_flux_err'] = self.psf_flux_err
 
     def _maybe_clip(self, efitter, dfitter, pars, fracdev):
         """

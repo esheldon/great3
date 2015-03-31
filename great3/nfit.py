@@ -1203,6 +1203,9 @@ class NGMixFitter(FitterBase):
         pars=res['pars']
         pars_cov=res['pars_cov']
 
+        self.data['psf_flux'][sub_index] = res['psf_flux']
+        self.data['psf_flux_err'][sub_index] = res['psf_flux_err']
+
         # assuming log(T) and log(F)
         T = pars[4]
         T_s2n = sqrt(1.0/pars_cov[4,4])
