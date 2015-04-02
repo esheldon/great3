@@ -36,7 +36,9 @@ class FitterBase(object):
         epoch.
         """
 
-        self.conf=keys
+        self.conf={}
+        self.conf.update(keys)
+        self.conf['psf_flux_min'] = self.conf.get('psf_flux_min',0.0)
         self._setup_checkpoints()
         self._set_field_data()
         self._set_obj_range()
@@ -141,8 +143,15 @@ class FitterBase(object):
         if prun is not None:
             from ngmix.gmix import GMixND
 
+            if 'cgc' in prun:
+                experiment="control"
+            elif 'rgc' in prun:
+                experiment="real_galaxy"
+            else:
+                raise ValueError("expected rgc or cgc in run")
+
             partype=self.conf.get('fracdev_prior_type','fracdev')
-            pars=files.read_prior(experiment="real_galaxy",
+            pars=files.read_prior(experiment=experiment,
                                   obs_type="ground",
                                   shear_type="constant",
                                   run=prun,
