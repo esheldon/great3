@@ -6,18 +6,20 @@ import ngmix
 from ngmix.joint_prior import JointPriorTF, JointPriorSimpleHybrid
 
 
-def make_joint_prior_simple(type,
+def make_joint_prior_simple(run,
+                            partype, # e.g. hybrid, hybrid-pflux-1.304
                             cen_width,
                             g_prior_during=True,
-                            g_prior_type=None,
+                            g_prior_type='great-des',
+                            g_prior_pars=None,
                             with_TF_bounds=True):
     """
-    Make a joint prior 
+    Make a joint prior
 
     g_prior_during=False to just use a simple ZDisk2D
     """
 
-    if 'rgc' in type:
+    if 'rgc' in run:
         """
         e.g. g302-rgc-deep02
 
@@ -29,8 +31,8 @@ def make_joint_prior_simple(type,
         t=files.read_prior(experiment="real_galaxy",
                             obs_type="ground",
                             shear_type="constant",
-                            run=type,
-                            partype="hybrid",
+                            run=run,
+                            partype=partype,
                             ext="fits")
 
         TF_prior=JointPriorTF(t['weights'],
@@ -40,19 +42,13 @@ def make_joint_prior_simple(type,
         cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
 
         if g_prior_during:
-            if g_prior_type is not None:
-                assert g_prior_type=='ba',"if g_prior_type specified must be 'ba'"
-                sigma=0.3
-                g_prior = ngmix.priors.GPriorBA(sigma)
-            else:
-                g_prior_pars = [1.0, 6680.0, 0.0509, 0.733]
-                g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
+            g_prior = get_g_prior(g_prior_type, g_prior_pars)
         else:
             g_prior = ngmix.priors.ZDisk2D(1.0)
 
         p=JointPriorSimpleHybrid(cen_prior, g_prior, TF_prior)
 
-    elif 'cgc' in type:
+    elif 'cgc' in run:
         """
         e.g. rg302-cgc-deep01
 
@@ -63,8 +59,8 @@ def make_joint_prior_simple(type,
         t=files.read_prior(experiment="control",
                             obs_type="ground",
                             shear_type="constant",
-                            run=type,
-                            partype="hybrid",
+                            run=run,
+                            partype=partype,
                             ext="fits")
 
         TF_prior=JointPriorTF(t['weights'],
@@ -74,7 +70,7 @@ def make_joint_prior_simple(type,
         cen_prior=ngmix.priors.CenPrior(0.0, 0.0, cen_width, cen_width)
 
         if g_prior_during:
-            g_prior = ngmix.priors.make_gprior_cosmos_sersic()
+            g_prior = get_g_prior(g_prior_type, g_prior_pars)
         else:
             g_prior = ngmix.priors.ZDisk2D(1.0)
 
@@ -194,6 +190,28 @@ def make_joint_prior_simple(type,
     '''
 
     return p
+
+def get_g_prior(g_prior_type, g_prior_pars):
+    print("loading g prior:",g_prior_type)
+
+    if g_prior_type =='ba':
+        if g_prior_pars is None:
+            g_prior_pars=0.3
+        print("g prior pars:",g_prior_pars)
+        g_prior = ngmix.priors.GPriorBA(g_prior_pars)
+    elif g_prior_type=='great-des':
+        if g_prior_pars is None:
+            g_prior_pars = [1.0, 6680.0, 0.0509, 0.733]
+        print("g prior pars:",g_prior_pars)
+        g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
+    elif g_prior_type=='m-erf':
+        assert g_prior_pars != None,"send pars for merf"
+        print("g prior pars:",g_prior_pars)
+        g_prior = ngmix.priors.GPriorMErf(pars=g_prior_pars)
+    else:
+        raise ValueError("bad g_prior_type: '%s'" % (g_prior_type))
+
+    return g_prior
 
 
 def make_joint_prior_sersic(type="great3-cgc-sersic-hybrid-deep01"):
