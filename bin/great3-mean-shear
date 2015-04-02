@@ -146,6 +146,15 @@ def do_sfit_select(data, conf, cuts, model):
 
         logic = logic & tmp_logic
 
+    if 'model' in cuts:
+        elogic = (data['best_model']==cuts['model'])
+        w,=where(elogic)
+        if w.size != data.size:
+            print("found %d/%d best_model = '%s'" % (w.size,data.size,cuts['model']))
+
+
+        logic = logic & elogic
+
     if 'g_sens_range' in cuts:
         gr=cuts['g_sens_range']
         tmp_logic = (  (data[n('g_sens')][:,0] > gr[0])
