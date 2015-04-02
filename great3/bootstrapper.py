@@ -137,7 +137,22 @@ class Bootstrapper(object):
         fit the galaxy.  You must run fit_psf() successfully first
         """
 
-        self._fit_gal_psf_flux()
+        self.max_fitter = self._fit_one_model_max(gal_model,
+                                                  pars,
+                                                  prior=prior,
+                                                  ntry=ntry)
+        res=self.max_fitter.get_result()
+        res['psf_flux'] = self.psf_flux
+        res['psf_flux_err'] = self.psf_flux_err
+
+
+    def _fit_one_model_max(self, gal_model, pars, prior=None, ntry=1):
+        """
+        fit the galaxy.  You must run fit_psf() successfully first
+        """
+
+        if not hasattr(self,'psf_flux'):
+            self.fit_gal_psf_flux()
 
         guesser=self._get_max_guesser(prior=prior)
 
@@ -147,12 +162,16 @@ class Bootstrapper(object):
 
         runner.go(ntry=ntry)
 
-        self.max_fitter=runner.fitter
+        fitter=runner.fitter
 
-        res=self.max_fitter.get_result()
+        res=fitter.get_result()
 
         if res['flags'] != 0:
             raise GalFailure("failed to fit galaxy with maxlike")
+
+        return fitter
+
+
 
     def isample(self, ipars, prior=None):
         """
@@ -180,6 +199,11 @@ class Bootstrapper(object):
             print("    eff iter %d: %.2f" % (i,tres['efficiency']))
             use_fitter = sampler
 
+        maxres=max_fitter.get_result()
+        tres['model'] = maxres['model']
+        tres['psf_flux']=self.psf_flux
+        tres['psf_flux_err']=self.psf_flux_err
+
         self.isampler=sampler
 
     def _make_sampler(self, fitter, ipars):
@@ -203,7 +227,7 @@ class Bootstrapper(object):
 
 
 
-    def _fit_gal_psf_flux(self):
+    def fit_gal_psf_flux(self):
         """
         use psf as a template, measure flux (linear)
         """
@@ -290,7 +314,8 @@ class CompositeBootstrapper(Bootstrapper):
 
         assert model=='cm','model must be cm'
 
-        self._fit_gal_psf_flux()
+        if not hasattr(self,'psf_flux'):
+            self.fit_gal_psf_flux()
 
         print("    fitting exp")
         exp_fitter=self._fit_one_model_max('exp',pars,prior=prior,ntry=ntry)
@@ -301,10 +326,11 @@ class CompositeBootstrapper(Bootstrapper):
         fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
 
         fracdev = fres['fracdev']
-        fracdev_clipped = self._maybe_clip(exp_fitter,
-                                           dev_fitter,
-                                           pars,
-                                           fracdev)
+        fracdev_clipped = self._clip_fracdev(fracdev,pars)
+        #fracdev_clipped = self._maybe_clip(exp_fitter,
+        #                                   dev_fitter,
+        #                                   pars,
+        #                                   fracdev)
 
         mess='        nfev: %d fracdev: %.3f +/- %.3f clipped: %.3f'
         print(mess % (fres['nfev'],fracdev,fres['fracdev_err'],fracdev_clipped))
@@ -327,8 +353,15 @@ class CompositeBootstrapper(Bootstrapper):
                 runner.go(ntry=ntry)
                 break
             except GMixRangeError:
-                print("caught GMixRange")
+                #if i==1:
+                #    print("caught GMixRange, clipping [-1.0,1.5]")
+                #    fracdev_clipped = fracdev_clipped.clip(min=-1.0, max=1.5)
+                #elif i==2:
+                #    print("caught GMixRange, clipping [ 0.0,1.0]")
+                #    fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
+                print("caught GMixRange, clipping [ 0.0,1.0]")
                 fracdev_clipped = fracdev_clipped.clip(min=0.0, max=1.0)
+
 
 
         self.max_fitter=runner.fitter
@@ -373,6 +406,15 @@ class CompositeBootstrapper(Bootstrapper):
                 stop
         return fracdev_clipped
 
+    def _clip_fracdev(self, fracdev, pars):
+        """
+        clip according to parameters
+        """
+        frange=pars.get('fracdev_range',[-2.0, 2.0])
+        fracdev_clipped = fracdev.clip(min=frange[0],max=frange[1])
+        return fracdev_clipped
+
+
 
     def isample(self, ipars, prior=None):
         super(CompositeBootstrapper,self).isample(ipars,prior=prior)
@@ -383,28 +425,8 @@ class CompositeBootstrapper(Bootstrapper):
         ires['fracdev']=maxres['fracdev']
         ires['fracdev_noclip']=maxres['fracdev_noclip']
         ires['fracdev_err']=maxres['fracdev_err']
-
-    def _fit_one_model_max(self, gal_model, pars, prior=None, ntry=1):
-        """
-        fit the galaxy.  You must run fit_psf() successfully first
-        """
-
-        guesser=self._get_max_guesser(prior=prior)
-
-        runner=MaxRunner(self.gal_obs, gal_model, pars, guesser,
-                         prior=prior,
-                         use_logpars=self.use_logpars)
-
-        runner.go(ntry=ntry)
-
-        fitter=runner.fitter
-
-        res=fitter.get_result()
-
-        if res['flags'] != 0:
-            raise GalFailure("failed to fit galaxy with maxlike")
-
-        return fitter
+        ires['psf_flux']=maxres['psf_flux']
+        ires['psf_flux_err']=maxres['psf_flux_err']
 
     def _fit_fracdev_grid(self, exp_fitter, dev_fitter, ntry=1):
         """
@@ -493,6 +515,54 @@ class CompositeBootstrapper(Bootstrapper):
 
         print('        Td/Te: %.3f' % TdByTe)
         return TdByTe
+
+
+class BestBootstrapper(Bootstrapper):
+    def __init__(self, psf_obs, gal_obs,
+                 use_logpars=False, fracdev_prior=None):
+        super(BestBootstrapper,self).__init__(psf_obs,
+                                                   gal_obs,
+                                                   use_logpars=use_logpars)
+
+    def fit_max(self, exp_prior, dev_prior, exp_rate, pars, ntry=1):
+        """
+        fit the galaxy.  You must run fit_psf() successfully first
+        """
+        from ngmix.gexceptions import GMixRangeError
+
+        if not hasattr(self,'psf_flux'):
+            self.fit_gal_psf_flux()
+
+        print("    fitting exp")
+        exp_fitter=self._fit_one_model_max('exp',pars,prior=exp_prior,ntry=ntry)
+        print("    fitting dev")
+        dev_fitter=self._fit_one_model_max('dev',pars,prior=dev_prior,ntry=ntry)
+
+        exp_res=exp_fitter.get_result()
+        dev_res=dev_fitter.get_result()
+
+        log_exp_rate = log(exp_rate)
+        log_dev_rate = log(1.0-exp_rate)
+        exp_lnprob = exp_res['lnprob'] + log_exp_rate
+        dev_lnprob = dev_res['lnprob'] + log_dev_rate
+
+        if exp_lnprob > dev_lnprob:
+            self.max_fitter = exp_fitter
+            self.prior=exp_prior
+            res=exp_res
+        else:
+            self.max_fitter = dev_fitter
+            self.prior=dev_prior
+            res=dev_res
+
+        mess="    exp_lnp: %.6g dev_lnp: %.6g best: %s"
+        #mess=mess % (exp(exp_lnprob),exp(dev_lnprob),res['model'])
+        mess=mess % (exp_lnprob,dev_lnprob,res['model'])
+        print(mess)
+
+
+    def isample(self, ipars):
+        super(BestBootstrapper,self).isample(ipars,prior=self.prior)
 
 
 class PSFRunner(object):
