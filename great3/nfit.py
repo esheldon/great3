@@ -1134,6 +1134,8 @@ class NGMixFitter(FitterBase):
         model_pars=conf['model_pars']
         nmod=len(model_pars)
 
+        if 'best' in model_pars:
+            model_pars = model_pars['best']
 
         priors={}
         for model in model_pars:
@@ -1142,7 +1144,15 @@ class NGMixFitter(FitterBase):
             if 'joint_prior' in mpars:
                 jp=mpars['joint_prior']
                 cen_width=jp['cen_prior_pars'][0]
-                prior=joint_prior.make_joint_prior_simple(jp['name'], cen_width)
+
+                g_prior_type=jp.get('g_prior_type',None)
+                g_prior_pars=jp.get('g_prior_pars',None)
+
+                prior=joint_prior.make_joint_prior_simple(jp['name'],
+                                                          jp['partype'],
+                                                          cen_width,
+                                                          g_prior_type=g_prior_type,
+                                                          g_prior_pars=g_prior_pars)
             else:
                 cen_prior=get_cen_prior(mpars['cen_prior_type'],
                                         pars=mpars['cen_prior_pars'])
@@ -1202,6 +1212,9 @@ class NGMixFitter(FitterBase):
 
         pars=res['pars']
         pars_cov=res['pars_cov']
+
+        if model=='best':
+            self.data['best_model'][sub_index] = res['model']
 
         self.data['psf_flux'][sub_index] = res['psf_flux']
         self.data['psf_flux_err'][sub_index] = res['psf_flux_err']
@@ -1310,14 +1323,16 @@ class NGMixFitter(FitterBase):
                  (n('g_cov'),'f8',(2,2)),
                 
                  (n('s2n_w'),'f8'),
+                 (n('lnprob'),'f8'),
                  (n('chi2per'),'f8'),
                  (n('dof'),'f8'),
-                 (n('aic'),'f8'),
-                 (n('bic'),'f8'),
                  (n('arate'),'f8'),
                  (n('tau'),'f8'),
                  (n('efficiency'),'f8'),
                 ]
+
+            if model=='best':
+                dt+=[('best_model','S3')]
 
             if model == 'cm':
                 dt += [( n('TdByTe'),'f8'),
@@ -1350,9 +1365,8 @@ class NGMixFitter(FitterBase):
             data[n('g_cov')] = PDEFVAL
 
             data[n('s2n_w')] = DEFVAL
+            data[n('lnprob')] = DEFVAL
             data[n('chi2per')] = PDEFVAL
-            data[n('aic')] = BIG_PDEFVAL
-            data[n('bic')] = BIG_PDEFVAL
 
             data[n('tau')] = BIG_PDEFVAL
 
@@ -1512,10 +1526,9 @@ def get_em_ngauss(name):
     return ngauss
 
 _stat_names=['s2n_w',
+             'lnprob',
              'chi2per',
-             'dof',
-             'aic',
-             'bic']
+             'dof']
 
 
 def get_model_names(model):
