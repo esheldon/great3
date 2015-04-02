@@ -23,6 +23,8 @@ class LMFitter(NGMixFitter):
         self._copy_to_output(sub_index, self.res)
 
     def _dofits(self):
+        psf_flux_min=self.conf['psf_flux_min']
+
         boot=self._get_bootstrapper()
 
         # find the center and reset the jacobian
@@ -33,6 +35,7 @@ class LMFitter(NGMixFitter):
         boot.fit_psf(self.conf['psf_model'],
                      Tguess=Tguess,
                      ntry=self.conf['psf_ntry'])
+
 
         # this is a copy
         self.res['psf_gmix'] = boot.psf_obs.get_gmix()
@@ -46,6 +49,14 @@ class LMFitter(NGMixFitter):
             try:
 
                 prior=self.priors[model]
+
+                boot.fit_gal_psf_flux()
+
+                if boot.psf_flux < psf_flux_min:
+                    print("        low psf flux, skipping")
+                    self.res['flags'] = PSF_FLUX_LOW 
+                    continue
+
                 boot.fit_max(model,
                              max_pars,
                              prior=prior,
@@ -129,6 +140,8 @@ class CompositeLMFitter(LMFitter):
 class ISampleFitter(LMFitter):
     def _dofits(self):
 
+        psf_flux_min=self.conf['psf_flux_min']
+
         boot=self._get_bootstrapper()
         # find the center and reset the jacobian
         boot.find_cen()
@@ -154,6 +167,13 @@ class ISampleFitter(LMFitter):
             try:
 
                 prior=self.priors[model]
+
+                boot.fit_gal_psf_flux()
+                if boot.psf_flux < psf_flux_min:
+                    print("        low psf flux, skipping")
+                    self.res['flags'] = PSF_FLUX_LOW 
+                    continue
+
                 boot.fit_max(model,
                              max_pars,
                              prior=prior,
@@ -167,7 +187,7 @@ class ISampleFitter(LMFitter):
 
                 self.res[model] = {'fitter':sampler,
                                    'res':sampler.get_result()}
-                
+
                 self._print_galaxy_res(model)
 
                 if self.make_plots:
@@ -259,5 +279,79 @@ class CompositeISampleFitter(ISampleFitter):
                                    use_logpars=True)
         return boot
 
+
+class BestISampleFitter(ISampleFitter):
+    """
+    ISampler using best of exp and dev
+    """
+    def _get_bootstrapper(self):
+        from .bootstrapper import BestBootstrapper
+        boot=BestBootstrapper(self.psf_obs,
+                              self.gal_obs,
+                              use_logpars=True)
+        return boot
+
+
+    def _dofits(self):
+
+        psf_flux_min=self.conf['psf_flux_min']
+
+        boot=self._get_bootstrapper()
+        # find the center and reset the jacobian
+        boot.find_cen()
+
+        sigma_guess=self.conf['psf_fwhm_guess']/2.35
+        Tguess=2*sigma_guess**2
+        boot.fit_psf(self.conf['psf_model'],
+                     Tguess=Tguess,
+                     ntry=self.conf['psf_ntry'])
+
+        # this is a copy
+        self.res['psf_gmix'] = boot.psf_obs.get_gmix()
+        self._print_psf_res()
+
+        if self.make_plots:
+            self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
+
+        max_pars=self.conf['max_pars']
+        ipars=self.conf['isample_pars']
+
+        model='best'
+        i=0
+        try:
+
+            boot.fit_gal_psf_flux()
+            if boot.psf_flux < psf_flux_min:
+                print("        low psf flux, skipping")
+                self.res['flags'] = PSF_FLUX_LOW 
+                return
+
+            boot.fit_max(self.priors['exp'],
+                         self.priors['dev'],
+                         self.conf['exp_rate'],
+                         max_pars,
+                         ntry=max_pars['ntry'])
+
+            boot.isample(ipars)
+
+            sampler=boot.get_isampler()
+            max_fitter=boot.get_max_fitter()
+
+            # set prior for best
+            self.priors['best'] = boot.prior
+            self._add_shear_info(sampler, max_fitter, model)
+
+            self.res[model] = {'fitter':sampler,
+                               'res':sampler.get_result()}
+
+            self._print_galaxy_res(model)
+
+            if self.make_plots:
+                self._compare_gal(model, boot.max_fitter)
+                self._make_trials_plot(model, sampler)
+
+        except GalFailure:
+            print("failed to fit galaxy with model: %s" % model)
+            self.res['flags'] = 2**(i+1)
 
 
