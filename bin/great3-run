@@ -72,6 +72,12 @@ def run(conf):
             else:
                 raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
 
+        elif conf['fitter_class']=='sfit-best':
+            if conf['fitter_type']=='isample':
+                fitter=great3.sfit.BestISampleFitter(**conf)
+            else:
+                raise ValueError("bad fitter type: '%s'" % conf['fitter_type'])
+
 
         else:
             raise ValueError("bad fitter class: '%s'" % conf['fitter_class'])
