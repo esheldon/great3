@@ -18,7 +18,7 @@ MIN_COVAR=1.0e-12
 GMAX=0.985
 
 
-def fit_joint_TF_run(run, model, **keys):
+def fit_joint_TF_run(run, model, psf_flux_min=None, **keys):
     """
     Fit a joint prior to the fields from the given run
 
@@ -32,6 +32,12 @@ def fit_joint_TF_run(run, model, **keys):
 
     data=read_all(run, **keys)
 
+    partype='%s-TF' % model
+    if psf_flux_min is not None:
+        w,=where( data['psf_flux'] > psf_flux_min)
+        data=data[w]
+        partype='%s-pflux-%.3f' % (partype, psf_flux_min)
+
     if model=='cm' and 'composite_g' in data.dtype.names:
         n=Namer('composite')
     else:
@@ -40,7 +46,7 @@ def fit_joint_TF_run(run, model, **keys):
     pars[:,0] = data[n('pars')][:,4]
     pars[:,1] = data[n('pars')][:,5]
 
-    conf['partype']='hybrid'
+    conf['partype']=partype
 
 
     fits_name=files.get_prior_file(ext='fits', **conf)
@@ -102,7 +108,16 @@ def fit_fracdev_run(run, model, **keys):
                       **keys)
 
 
-def fit_joint_F_fracdev_run(run, model, **keys):
+def fit_joint_F_fracdev_run_fluxcut(run, model, **keys):
+    data=read_all(run, **keys)
+
+    pcuts=numpy.percentile(data['psf_flux'], [0, 25, 50, 75])
+
+    for psf_flux_min in pcuts:
+        fit_joint_F_fracdev_run(run, model, psf_flux_min=psf_flux_min, **keys)
+
+
+def fit_joint_F_fracdev_run(run, model, psf_flux_min=None, **keys):
     """
     Fit a joint prior to the fields from the given run
 
@@ -127,12 +142,19 @@ def fit_joint_F_fracdev_run(run, model, **keys):
     F=data[n('pars')][:,5]
     fracdev = data[ n('fracdev') ]
     fracdev_err = data[ n('fracdev_err') ]
-    w,=where(
+    logic = (
         between(F, -1.0,4.0)
         & between(fracdev, -1.0, 1.5)
         & (fracdev != 0.0)
         & (fracdev != 1.0)
     )
+
+    partype='F-fracdev'
+    if psf_flux_min is not None:
+        logic = logic & (data['psf_flux'] > psf_flux_min)
+        partype='%s-pflux-%.3f' % (partype, psf_flux_min)
+
+    w,=where(logic)
 
     data=data[w]
 
@@ -140,7 +162,7 @@ def fit_joint_F_fracdev_run(run, model, **keys):
     pars[:,0] = data[n('pars')][:,5]
     pars[:,1] = data[n('fracdev')]
 
-    conf['partype']='F-fracdev'
+    conf['partype']=partype
 
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
@@ -595,11 +617,13 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
         tab.show()
 
     if eps:
+        import converter
         print(eps)
         d=os.path.dirname(eps)
         if not os.path.exists(d):
             os.makedirs(d)
         tab.write_eps(eps)
+        converter.convert(eps, verbose=True, dpi=200)
 
 def log_T_to_log_sigma(log_T):
     T = 10.0**log_T
