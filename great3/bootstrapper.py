@@ -298,13 +298,23 @@ class Bootstrapper(object):
 
 class CompositeBootstrapper(Bootstrapper):
     def __init__(self, psf_obs, gal_obs,
-                 use_logpars=False, fracdev_prior=None):
+                 use_logpars=False,
+                 fracdev_prior=None,
+                 fracdev_grid=None):
         super(CompositeBootstrapper,self).__init__(psf_obs,
                                                    gal_obs,
                                                    use_logpars=use_logpars)
         self.fracdev_prior=fracdev_prior
         #self.fracdev_tests=linspace(-0.5,1.1,17)
-        self.fracdev_tests=linspace(-1.0,1.5,26)
+        #self.fracdev_tests=linspace(-1.0,1.5,26)
+        #self.fracdev_tests=linspace(-1.0,1.1,22)
+        if fracdev_grid is not None:
+            #print("loading fracdev grid:",fracdev_grid)
+            self.fracdev_tests=linspace(fracdev_grid['min'],
+                                        fracdev_grid['max'],
+                                        fracdev_grid['num'])
+        else:
+            self.fracdev_tests=linspace(-1.0,1.5,26)
 
     def fit_max(self, model, pars, prior=None, ntry=1):
         """
@@ -323,14 +333,11 @@ class CompositeBootstrapper(Bootstrapper):
         dev_fitter=self._fit_one_model_max('dev',pars,prior=prior,ntry=ntry)
 
         print("    fitting fracdev")
-        fres=self._fit_fracdev(exp_fitter, dev_fitter, ntry=ntry)
+        use_grid=pars.get('use_fracdev_grid',False)
+        fres=self._fit_fracdev(exp_fitter, dev_fitter, use_grid=use_grid)
 
         fracdev = fres['fracdev']
         fracdev_clipped = self._clip_fracdev(fracdev,pars)
-        #fracdev_clipped = self._maybe_clip(exp_fitter,
-        #                                   dev_fitter,
-        #                                   pars,
-        #                                   fracdev)
 
         mess='        nfev: %d fracdev: %.3f +/- %.3f clipped: %.3f'
         print(mess % (fres['nfev'],fracdev,fres['fracdev_err'],fracdev_clipped))
@@ -428,21 +435,7 @@ class CompositeBootstrapper(Bootstrapper):
         ires['psf_flux']=maxres['psf_flux']
         ires['psf_flux_err']=maxres['psf_flux_err']
 
-    def _fit_fracdev_grid(self, exp_fitter, dev_fitter, ntry=1):
-        """
-        just use the grid
-        """
-        fracdev=self._get_fracdev_guess(ffitter)
-
-        res={'flags':0,
-             'fracdev':fracdev,
-             'fracdev_err':1.0,
-             'nfev':self.fracdev_tests.size}
-
-        return res
-
-
-    def _fit_fracdev(self, exp_fitter, dev_fitter, ntry=1):
+    def _fit_fracdev(self, exp_fitter, dev_fitter, use_grid=False):
         from ngmix.fitting import FracdevFitter, FracdevFitterMax
 
         eres=exp_fitter.get_result()
@@ -460,20 +453,25 @@ class CompositeBootstrapper(Bootstrapper):
         if fprior is None:
             ffitter = FracdevFitter(self.gal_obs, epars, dpars,
                                     use_logpars=self.use_logpars)
+            res=ffitter.get_result()
         else:
 
             ffitter = FracdevFitterMax(self.gal_obs, epars, dpars,
                                        use_logpars=self.use_logpars,
                                        prior=fprior)
-            guess=self._get_fracdev_guess(ffitter)
+            if use_grid:
+                res=self._fit_fracdev_grid(ffitter)
+            else:
 
-            print("        fracdev guess:",guess)
-            if guess is None:
-                raise GalFailure("failed to fit fracdev")
+                guess=self._get_fracdev_guess(ffitter)
 
-            ffitter.go(guess)
+                print("        fracdev guess:",guess)
+                if guess is None:
+                    raise GalFailure("failed to fit fracdev")
 
-        res=ffitter.get_result()
+                ffitter.go(guess)
+
+                res=ffitter.get_result()
 
         if res['flags'] != 0:
             raise GalFailure("failed to fit fracdev")
@@ -481,6 +479,25 @@ class CompositeBootstrapper(Bootstrapper):
 
         self.fracdev_fitter=ffitter
         return res
+
+    def _fit_fracdev_grid(self, ffitter):
+        """
+        just use the grid
+        """
+        #print("    fitting fracdev on grid")
+        fracdev=self._get_fracdev_guess(ffitter)
+
+        if fracdev is None:
+            raise GalFailure("failed to fit fracdev")
+
+        res={'flags':0,
+             'fracdev':fracdev,
+             'fracdev_err':1.0,
+             'nfev':self.fracdev_tests.size}
+
+        return res
+
+
 
     def _get_fracdev_guess(self, fitter):
         tests=self.fracdev_tests
