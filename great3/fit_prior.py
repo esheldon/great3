@@ -256,10 +256,6 @@ def fit_joint_noshape(pars,
         T,flux_b,flux_d
     """
 
-    print("ngauss:   ",ngauss)
-    print("n_iter:   ",n_iter)
-    print("min_covar:",min_covar)
-
     ndim = pars.shape[1]
     assert (ndim==1 or ndim==2 or ndim==3 or ndim==4),"ndim should be 2,3,4, got %s" % ndim
 
@@ -312,9 +308,6 @@ def fit_joint_all(field_list,model,
         g1,g2,T,flux_b,flux_d
     """
 
-    print("ngauss:   ",ngauss)
-    print("n_iter:   ",n_iter)
-    print("min_covar:",min_covar)
     if dolog:
         print("using log pars")
         usepars = make_logpars_and_subtract_mean_shape(field_list)
@@ -557,6 +550,11 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
         [npoints, ndim]
     """
     from sklearn.mixture import GMM
+
+
+    print("ngauss:   ",ngauss)
+    print("n_iter:   ",n_iter)
+    print("min_covar:",min_covar)
 
     gmm=GMM(n_components=ngauss,
             n_iter=n_iter,
