@@ -204,6 +204,22 @@ def get_gal_image_file(**keys):
     nkeys['ftype'] = 'image'
     return get_file(**nkeys)
 
+def count_gal_image_files(**keys):
+    """
+    count all that exist
+    """
+    subid=0
+    while True:
+        keys['subid']=subid
+
+        fname=get_gal_image_file(**keys)
+        if not os.path.exists(fname):
+            break
+
+        subid += 1
+
+    return subid
+ 
 def read_gal_image(**keys):
     """
     Same parameters as get_file but ftype is set to 'image'
@@ -304,6 +320,23 @@ def get_deep_gal_image_file(**keys):
     nkeys['ftype'] = 'deep_image'
     return get_file(**nkeys)
 
+def count_deep_gal_image_files(**keys):
+    """
+    count all that exist
+    """
+    subid=0
+    while True:
+        keys['subid']=subid
+
+        fname=get_deep_gal_image_file(**keys)
+        if not os.path.exists(fname):
+            break
+
+        subid += 1
+
+    return subid
+        
+
 def read_deep_gal_image(**keys):
     """
     Same parameters as get_file but ftype is set to 'deep_image'
@@ -360,7 +393,8 @@ def get_skynoise_file(**keys):
     """
     d=get_skynoise_dir(**keys)
 
-    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-skynoise.fits'
+    #fname='%(experiment)s-%(obs_type)s-%(shear_type)s-skynoise.fits'
+    fname='%(experiment)s-%(obs_type)s-%(shear_type)s-%(subid)06d-skynoise.fits'
     fname = fname % keys
 
     fname=os.path.join(d, fname)
@@ -761,9 +795,11 @@ def get_nsub(**keys):
 
     deep=keys.get('deep',False)
     if deep:
-        return constants.NSUB_DEEP
+        nsub=count_deep_gal_image_files(**keys)
     else:
-        return constants.NSUB
+        nsub=count_gal_image_files(**keys)
+
+    return nsub
 
 def get_chunk_ranges(nper):
     """
