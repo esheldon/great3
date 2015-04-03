@@ -129,9 +129,11 @@ class CompositeLMFitter(LMFitter):
 
 
     def _get_bootstrapper(self):
+        fracdev_grid=self.conf.get('fracdev_grid',None)
         boot=CompositeBootstrapper(self.psf_obs,
                                    self.gal_obs,
                                    fracdev_prior=self.fracdev_prior,
+                                   fracdev_grid=fracdev_grid,
                                    use_logpars=True)
         return boot
 
@@ -273,9 +275,11 @@ class CompositeISampleFitter(ISampleFitter):
         self._set_fracdev_prior()
 
     def _get_bootstrapper(self):
+        fracdev_grid=self.conf.get('fracdev_grid',None)
         boot=CompositeBootstrapper(self.psf_obs,
                                    self.gal_obs,
                                    fracdev_prior=self.fracdev_prior,
+                                   fracdev_grid=fracdev_grid,
                                    use_logpars=True)
         return boot
 
