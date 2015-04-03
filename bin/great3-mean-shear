@@ -170,15 +170,27 @@ def do_sfit_select(data, conf, cuts, model):
 
 
     if 's2n_range' in cuts:
+        s2n=data[n('s2n_w')]
         s2nr = cuts['s2n_range']
-        tmp_logic = (  (data[n('s2n_w')] > s2nr[0])
-                     & (data[n('s2n_w')] < s2nr[1]) )
-        w,=where(tmp_logic)
+        elogic = (  (s2n > s2nr[0]) & (s2n < s2nr[1]) )
+        w,=where(elogic)
         if w.size != data.size:
             mess="found %d/%d s2n in [%s,%s]"
             print(mess % (w.size,data.size,s2nr[0],s2nr[1]))
 
-        logic = logic & tmp_logic
+        logic = logic & elogic
+
+    if 'chi2per_range' in cuts:
+        chi2per=data[n('chi2per')]
+        r = cuts['chi2per_range']
+        elogic = (  (chi2per > r[0]) & (chi2per < r[1]) )
+        w,=where(elogic)
+        if w.size != data.size:
+            mess="found %d/%d chi2per in [%s,%s]"
+            print(mess % (w.size,data.size,r[0],r[1]))
+
+        logic = logic & elogic
+
 
     if 'Ts2n_min' in cuts:
         Ts2n_min=cuts['Ts2n_min']
@@ -325,8 +337,12 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
                 chunksize=1
             print("jackknife size:",chunksize)
 
+            g_sens = data[n('g_sens')][w,:].copy()
+            g_sens_mean=g_sens.mean(axis=1)
+            g_sens[:,0] = g_sens_mean
+            g_sens[:,1] = g_sens_mean
             shear, shear_cov = lensfit_jackknife(data[n('g')][w,:],
-                                                 data[n('g_sens')][w,:],
+                                                 g_sens,
                                                  weights=wts,
                                                  chunksize=chunksize)
             res = {'shear':shear,'shear_cov':shear_cov}
@@ -389,11 +405,6 @@ def main():
     config_file=args[0]
     cuts_config=args[1]
     model=args[2]
-
-    if len(args) > 2:
-        fobj=open(args[2],'w')
-    else:
-        fobj=sys.stdout
 
     conf=yaml.load(open(config_file))
     cuts=yaml.load(open(cuts_config))
