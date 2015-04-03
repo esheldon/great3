@@ -51,9 +51,6 @@ def make_joint_prior_simple(run,
     elif 'cgc' in run:
         """
         e.g. rg302-cgc-deep01
-
-        Using a fit to lackner for g prior
-
         """
 
         t=files.read_prior(experiment="control",
@@ -191,23 +188,31 @@ def make_joint_prior_simple(run,
 
     return p
 
-def get_g_prior(g_prior_type, g_prior_pars):
+def get_g_prior(g_prior_type, g_prior_pars=None):
     print("loading g prior:",g_prior_type)
 
     if g_prior_type =='ba':
+
         if g_prior_pars is None:
             g_prior_pars=0.3
+
         print("g prior pars:",g_prior_pars)
         g_prior = ngmix.priors.GPriorBA(g_prior_pars)
+
     elif g_prior_type=='great-des':
+
         if g_prior_pars is None:
             g_prior_pars = [1.0, 6680.0, 0.0509, 0.733]
+
         print("g prior pars:",g_prior_pars)
         g_prior = ngmix.priors.GPriorGreatDES(pars=g_prior_pars, gmax=1.0)
+
     elif g_prior_type=='m-erf':
+
         assert g_prior_pars != None,"send pars for merf"
         print("g prior pars:",g_prior_pars)
         g_prior = ngmix.priors.GPriorMErf(pars=g_prior_pars)
+
     else:
         raise ValueError("bad g_prior_type: '%s'" % (g_prior_type))
 
