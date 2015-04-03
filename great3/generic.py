@@ -183,12 +183,12 @@ class FitterBase(object):
         deep=self.conf.get('deep',False)
         if deep:
             self.field = DeepField(**self.conf)
-            all_skysig = files.read_deep_skynoise(**self.conf)
+            skysig_struct = files.read_deep_skynoise(**self.conf)
         else:
             self.field = Field(**self.conf)
-            all_skysig = files.read_skynoise(**self.conf)
+            skysig_struct = files.read_skynoise(**self.conf)
 
-        self.skysig = all_skysig['skysig'][self.conf['subid']]
+        self.skysig = skysig_struct['skysig'][0]
         self.sky_ivar = 1.0/self.skysig**2
 
         print("skysig:",self.skysig)
