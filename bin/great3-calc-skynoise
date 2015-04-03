@@ -13,6 +13,10 @@ parser.add_argument('great3run',help='great3 run, e.g. run01')
 parser.add_argument('experiment', help='experiment, e.g. control')
 parser.add_argument('obs_type', help='observation type, e.g. ground')
 parser.add_argument('shear_type', help='shear type, e.g. constant')
+
+parser.add_argument('subid',type=int,default=None, help='process the indicated subfield')
+
+
 parser.add_argument('-d','--deep',action='store_true',
                   help='use the deep observations')
 
@@ -26,6 +30,7 @@ def main():
                                           experiment=args.experiment,
                                           obs_type=args.obs_type,
                                           shear_type=args.shear_type,
+                                          subid=args.subid,
                                           deep=args.deep)
 
 main()
