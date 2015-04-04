@@ -72,7 +72,7 @@ def fit_fracdev_run(run, model, **keys):
     keys['noshape']=True
     keys['dolog']=True
     keys['min_covar']=keys.get('min_covar',1.0e-4)
-    keys['ngauss']=keys.get('ngauss',5)
+    keys['ngauss']=keys.get('ngauss',20)
 
     data=read_all(run, **keys)
 
@@ -1042,7 +1042,7 @@ class GPriorFitterAlt(GPriorFitterExp):
         print( fmt % self.result )
 
 
-def read_all(run, gmax=GMAX, nsub=5, **keys):
+def read_all(run, gmax=GMAX, nsub=None, **keys):
     """
     read data from a deep run
 
@@ -1050,6 +1050,9 @@ def read_all(run, gmax=GMAX, nsub=5, **keys):
     """
     import esutil as eu
     conf=files.read_config(run)
+
+    if nsub is None:
+        nsub=files.get_nsub(**conf)
 
     field_list=[]
     for subid in xrange(nsub):
