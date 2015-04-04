@@ -1117,7 +1117,8 @@ class NGMixFitter(FitterBase):
             print("will make plots!")
 
         self.shear_expand=conf.get('shear_expand')
-        self._unpack_priors()
+
+        self.priors=self._unpack_priors(conf['model_pars'])
 
     def _get_jacobian(self, cen):
         """
@@ -1128,10 +1129,7 @@ class NGMixFitter(FitterBase):
         j = DiagonalJacobian(cen[0], cen[1], scale=pixel_scale)
         return j
 
-    def _unpack_priors(self):
-        conf=self.conf
-
-        model_pars=conf['model_pars']
+    def _unpack_priors(self, model_pars):
         nmod=len(model_pars)
 
         if 'best' in model_pars:
@@ -1172,7 +1170,7 @@ class NGMixFitter(FitterBase):
 
             priors[model] = prior
 
-        self.priors=priors
+        return priors
 
     def _copy_to_output(self, sub_index, res):
         """
