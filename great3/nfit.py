@@ -1119,6 +1119,11 @@ class NGMixFitter(FitterBase):
         self.shear_expand=conf.get('shear_expand')
 
         self.priors=self._unpack_priors(conf['model_pars'])
+        if 'extra_model_pars' in conf and conf['extra_model_pars'] is not None:
+            print("loading extra priors")
+            self.extra_priors = self._unpack_priors(conf['extra_model_pars'])
+        else:
+            self.extra_priors = None
 
     def _get_jacobian(self, cen):
         """
