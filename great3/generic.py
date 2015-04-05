@@ -139,6 +139,9 @@ class FitterBase(object):
         self.index_list = numpy.arange(obj_range[0],obj_range[1]+1)
 
     def _set_fracdev_prior(self):
+
+        self.fracdev_grid=self.conf.get('fracdev_grid',None)
+
         prun=self.conf.get('fracdev_prior',None)
         if prun is not None:
             from ngmix.gmix import GMixND
