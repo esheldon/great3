@@ -28,7 +28,12 @@ def read_config(run):
     """
     import yaml
     fname=get_config_file(run)
-    return yaml.load(open(fname))
+    conf=yaml.load(open(fname))
+
+    mess="mismatch between runs: '%s' vs '%s'" % (run,conf['run'])
+    assert conf['run']==run,mess
+
+    return conf
 
 
 def get_dir(**keys):
