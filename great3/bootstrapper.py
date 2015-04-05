@@ -132,9 +132,11 @@ class Bootstrapper(object):
         return runner
 
 
-    def fit_max(self, gal_model, pars, prior=None, ntry=1):
+    def fit_max(self, gal_model, pars, prior=None, extra_priors=None, ntry=1):
         """
         fit the galaxy.  You must run fit_psf() successfully first
+
+        extra_priors is ignored here but used in composite
         """
 
         self.max_fitter = self._fit_one_model_max(gal_model,
@@ -316,21 +318,36 @@ class CompositeBootstrapper(Bootstrapper):
         else:
             self.fracdev_tests=linspace(-1.0,1.5,26)
 
-    def fit_max(self, model, pars, prior=None, ntry=1):
+    def fit_max(self,
+                model,
+                pars,
+                prior=None,
+                extra_priors=None,
+                ntry=1):
         """
         fit the galaxy.  You must run fit_psf() successfully first
         """
         from ngmix.gexceptions import GMixRangeError
 
         assert model=='cm','model must be cm'
+        #assert extra_priors != None,"send extra_priors="
+        if extra_priors is None:
+            #print("using regular prior for exp and dev")
+            exp_prior=prior
+            dev_prior=prior
+        else:
+            exp_prior=extra_priors['exp']
+            dev_prior=extra_priors['dev']
 
         if not hasattr(self,'psf_flux'):
             self.fit_gal_psf_flux()
 
         print("    fitting exp")
-        exp_fitter=self._fit_one_model_max('exp',pars,prior=prior,ntry=ntry)
+        exp_fitter=self._fit_one_model_max('exp',pars,
+                                           prior=exp_prior,ntry=ntry)
         print("    fitting dev")
-        dev_fitter=self._fit_one_model_max('dev',pars,prior=prior,ntry=ntry)
+        dev_fitter=self._fit_one_model_max('dev',pars,
+                                           prior=dev_prior,ntry=ntry)
 
         print("    fitting fracdev")
         use_grid=pars.get('use_fracdev_grid',False)
