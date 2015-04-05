@@ -12,13 +12,15 @@ import ngmix
 from . import files
 from .generic import Namer
 
+from pprint import pprint
+
 NGAUSS_DEFAULT=10
 N_ITER_DEFAULT=5000
 MIN_COVAR=1.0e-12
 GMAX=0.985
 
 
-def fit_joint_TF_run(run, model, psf_flux_min=None, **keys):
+def fit_joint_TF_run(run, model, prior_name,  **keys):
     """
     Fit a joint prior to the fields from the given run
 
@@ -27,27 +29,25 @@ def fit_joint_TF_run(run, model, psf_flux_min=None, **keys):
     import fitsio
     conf=files.read_config(run)
 
+    pconf=files.read_prior_config(prior_name)
+    n=Namer(model)
+
     keys['noshape']=keys.get('noshape',True)
     keys['dolog']=keys.get('dolog',True)
+    keys['min_covar']=pconf['min_covar']
 
     data=read_all(run, **keys)
 
-    partype='%s-TF' % model
-    if psf_flux_min is not None:
-        w,=where( data['psf_flux'] > psf_flux_min)
-        data=data[w]
-        partype='%s-pflux-%.3f' % (partype, psf_flux_min)
+    w = do_select(data, model, prior_name)
+    data=data[w]
 
-    if model=='cm' and 'composite_g' in data.dtype.names:
-        n=Namer('composite')
-    else:
-        n=Namer(model)
+    partype='%s-TF-%s' % (model, prior_name)
+
     pars = zeros( (data.size, 2) )
     pars[:,0] = data[n('pars')][:,4]
     pars[:,1] = data[n('pars')][:,5]
 
     conf['partype']=partype
-
 
     fits_name=files.get_prior_file(ext='fits', **conf)
     eps_name=files.get_prior_file(ext='eps', **conf)
@@ -117,46 +117,74 @@ def fit_joint_F_fracdev_run_fluxcut(run, model, **keys):
         fit_joint_F_fracdev_run(run, model, psf_flux_min=psf_flux_min, **keys)
 
 
-def fit_joint_F_fracdev_run(run, model, psf_flux_min=None, **keys):
+def get_logic(data, model, prior_name):
+    from esutil.numpy_util import between
+
+    pconf=files.read_prior_config(prior_name)
+    pprint(pconf)
+
+    n=Namer(model)
+
+    T=data[n('pars')][:,4]
+    F=data[n('pars')][:,5]
+
+    Tr = pconf['T_range']
+    Fr = pconf['F_range']
+    logic = (
+        between(T, Tr[0], Tr[1])
+        & between(F, Fr[0], Fr[1])
+    )
+
+    if n('fracdev') in data.dtype.names:
+        fracdev = data[ n('fracdev') ]
+        fracdev_err = data[ n('fracdev_err') ]
+        fdr = pconf['fracdev_range']
+
+        logic = (
+                 logic
+                 & between(fracdev, fdr[0], fdr[1])
+                 & (fracdev != 0.0)
+                 & (fracdev != 1.0)
+                 & (fracdev_err < pconf['fracdev_err_max'])
+                )
+
+    return logic
+
+def do_select(data, model, prior_name):
+    logic=get_logic(data, model, prior_name)
+    w,=where(logic)
+    print("keeping %d/%d" % (w.size, data.size))
+
+    return w
+ 
+def fit_joint_F_fracdev_run(run,
+                            model,
+                            prior_name,
+                            **keys):
     """
+    send nsub= to limit number of fields used in fit
+
     Fit a joint prior to the fields from the given run
 
     Calls more generic stuff such as fit_joint_noshape
     """
     import fitsio
-    from esutil.numpy_util import between
     conf=files.read_config(run)
+
+    pconf=files.read_prior_config(prior_name)
+    n=Namer(model)
 
     keys['noshape']=True
     keys['dolog']=True
-    keys['min_covar']=keys.get('min_covar',1.0e-4)
-    #keys['ngauss']=keys.get('ngauss',5)
+    keys['min_covar']=pconf['min_covar']
+    keys['ngauss']=keys.get('ngauss',20)
 
     data=read_all(run, **keys)
 
-    if model=='cm' and 'composite_g' in data.dtype.names:
-        n=Namer('composite')
-    else:
-        n=Namer(model)
-
-    F=data[n('pars')][:,5]
-    fracdev = data[ n('fracdev') ]
-    fracdev_err = data[ n('fracdev_err') ]
-    logic = (
-        between(F, -1.0,4.0)
-        & between(fracdev, -1.0, 1.5)
-        & (fracdev != 0.0)
-        & (fracdev != 1.0)
-    )
-
-    partype='F-fracdev'
-    if psf_flux_min is not None:
-        logic = logic & (data['psf_flux'] > psf_flux_min)
-        partype='%s-pflux-%.3f' % (partype, psf_flux_min)
-
-    w,=where(logic)
-
+    w = do_select(data, model, prior_name)
     data=data[w]
+
+    partype='F-fracdev-%s' % prior_name
 
     pars = zeros( (w.size, 2) )
     pars[:,0] = data[n('pars')][:,5]
@@ -178,7 +206,12 @@ def fit_joint_F_fracdev_run(run, model, psf_flux_min=None, **keys):
 
 
 
-def fit_joint_TF_fracdev_run(run, model, **keys):
+def fit_joint_TF_fracdev_run(run,
+                             model,
+                             fracdev_min=-1.0,
+                             fracdev_max=1.1,
+                             fracdev_err_max=0.1,
+                             **keys):
     """
     Fit a joint prior to the fields from the given run
 
@@ -207,12 +240,10 @@ def fit_joint_TF_fracdev_run(run, model, **keys):
     w,=where(
         between(T, -7.0, 2.0)
         & between(F, -1.0,4.0)
-        #(fracdev > -2)
-        #& (fracdev < 2)
-        & between(fracdev, -1.0, 1.5)
+        & between(fracdev, fracdev_min, fracdev_max)
         & (fracdev != 0.0)
         & (fracdev != 1.0)
-        #& (fracdev_err < 0.1)
+        & (fracdev_err < fracdev_err_max)
     )
 
     data=data[w]
