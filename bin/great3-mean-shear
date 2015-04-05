@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 """
-    %prog [options] config_file cuts_config_file model
 """
 from __future__ import print_function
 
@@ -15,11 +14,27 @@ import great3
 from great3 import files
 from great3.generic import Namer
 
-from optparse import OptionParser
-parser=OptionParser(__doc__)
+import argparse
+parser=argparse.ArgumentParser(__doc__)
 
-parser.add_option('--with-psf',action='store_true',
-                  help="include psf info. File name is different.")
+parser.add_argument('config_file',help='run config file')
+parser.add_argument('model',help='model to use')
+parser.add_argument('cuts_config_files',nargs='+',help='config files for cuts')
+
+parser.add_argument('--with-psf',action='store_true',
+                    help="include psf info. File name is different.")
+
+def ring_select(logic):
+
+    weven = numpy.arange(0,logic.size,2)
+    wodd  = numpy.arange(1,logic.size,2)
+
+    wboth, = numpy.where(  logic[wodd] & logic[weven] )
+
+    w=numpy.concatenate( (wodd[wboth], weven[wboth] ) )
+
+    w.sort()
+    return w
 
 def get_finite_logic(data, model):
     """
@@ -55,6 +70,7 @@ def get_shear_expand(conf):
 
 
 def do_nfit_select(data, conf, cuts):
+    raise RuntimeError("no longer supported")
     model=conf['fit_models'][0]
     n=Namer(model)
 
@@ -194,7 +210,8 @@ def do_sfit_select(data, conf, cuts, model):
 
     if 'Ts2n_min' in cuts:
         Ts2n_min=cuts['Ts2n_min']
-        Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
+        #Ts2n = sqrt(1.0/data[n('pars_cov')][:,4,4])
+        Ts2n = data[n('T_s2n')]
         Ts2n_logic = (Ts2n > Ts2n_min)
         w,=where(Ts2n_logic)
         if w.size != data.size:
@@ -280,7 +297,7 @@ def do_sfit_select(data, conf, cuts, model):
         logic = logic & tmp_logic
 
 
-    w,=where(logic)
+    w=ring_select(logic)
     if w.size != data.size:
         print("kept %d/%d" % (w.size,data.size))
     return w
@@ -396,49 +413,47 @@ def do_write_no_psf(subid, res, fobj):
 
 
 def main():
-    options,args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args()
 
-    if len(args) < 3:
-        parser.print_help()
-        sys.exit(45)
+    config_file=args.config_file
+    model=args.model
 
-    config_file=args[0]
-    cuts_config=args[1]
-    model=args[2]
+    cuts_configs=args.cuts_config_files
+    with_psf=args.with_psf
 
     conf=yaml.load(open(config_file))
-    cuts=yaml.load(open(cuts_config))
 
-    nsub=files.get_nsub(**conf)
+    for cuts_config in cuts_configs:
+        cuts=yaml.load(open(cuts_config))
 
-    conf['cut'] = cuts['cut']
+        nsub=files.get_nsub(**conf)
 
-    with_psf=options.with_psf
+        conf['cut'] = cuts['cut']
 
-    outname=files.get_shear_file(with_psf=with_psf, model=model, **conf)
-    print("writing to output file:",outname)
+        outname=files.get_shear_file(with_psf=with_psf, model=model, **conf)
+        print("writing to output file:",outname)
 
-    ntot=0
-    nkeep=0
-    with open(outname,'w') as fobj:
-        for subid in xrange(nsub):
-            res=do_calc_mean_shear(conf, cuts, subid, model, 
-                                   with_psf=with_psf)
+        ntot=0
+        nkeep=0
+        with open(outname,'w') as fobj:
+            for subid in xrange(nsub):
+                res=do_calc_mean_shear(conf, cuts, subid, model, 
+                                       with_psf=with_psf)
 
-            if with_psf:
-                do_write_with_psf(subid,res, fobj)
-            else:
-                do_write_no_psf(subid, res, fobj)
+                if with_psf:
+                    do_write_with_psf(subid,res, fobj)
+                else:
+                    do_write_no_psf(subid, res, fobj)
 
-            out2=(subid, res['shear'][0], sqrt(res['shear_cov'][0,0]),
-                  res['shear'][1], sqrt(res['shear_cov'][1,1]) )
+                out2=(subid, res['shear'][0], sqrt(res['shear_cov'][0,0]),
+                      res['shear'][1], sqrt(res['shear_cov'][1,1]) )
 
-            print('%d %g +/- %g  %g +/- %g' % out2)
+                print('%d %g +/- %g  %g +/- %g' % out2)
 
-            ntot += res['ntot']
-            nkeep += res['nkeep']
+                ntot += res['ntot']
+                nkeep += res['nkeep']
 
-    print("used %d/%d: %g" % (nkeep, ntot, float(nkeep)/ntot))
-    print("output in:",outname)
+        print("used %d/%d: %g" % (nkeep, ntot, float(nkeep)/ntot))
+        print("output in:",outname)
 
 main()
