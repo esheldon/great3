@@ -44,11 +44,8 @@ class LMFitter(NGMixFitter):
         if self.make_plots:
             self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
 
-        max_pars=self.conf['max_pars']
         for i,model in enumerate(self.conf['model_pars']):
             try:
-
-                prior=self.priors[model]
 
                 boot.fit_gal_psf_flux()
 
@@ -57,10 +54,7 @@ class LMFitter(NGMixFitter):
                     self.res['flags'] = PSF_FLUX_LOW 
                     continue
 
-                boot.fit_max(model,
-                             max_pars,
-                             prior=prior,
-                             ntry=max_pars['ntry'])
+                self._do_boot_fit_max(boot, model)
 
                 fitter=boot.get_max_fitter()
                 self.res[model] = {'fitter':fitter,
@@ -76,11 +70,16 @@ class LMFitter(NGMixFitter):
                 print("failed to fit galaxy with model: %s" % model)
                 self.res['flags'] = 2**(i+1)
 
-    def _get_bootstrapper(self):
-        boot=Bootstrapper(self.psf_obs,
-                          self.gal_obs,
-                          use_logpars=True)
+    def _do_boot_fit_max(self, boot, model):
+        max_pars=self.conf['max_pars']
+        boot.fit_max(model,
+                     max_pars,
+                     prior=self.priors[model],
+                     extra_priors=self.extra_priors,
+                     ntry=max_pars['ntry'])
 
+    def _get_bootstrapper(self):
+        boot=get_bootstrapper(self.psf_obs, self.gal_obs)
         return boot
 
 
@@ -126,15 +125,19 @@ class CompositeLMFitter(LMFitter):
         super(CompositeLMFitter,self).__init__(**keys)
 
         self._set_fracdev_prior()
-
-
+        
     def _get_bootstrapper(self):
-        fracdev_grid=self.conf.get('fracdev_grid',None)
+        """
         boot=CompositeBootstrapper(self.psf_obs,
                                    self.gal_obs,
                                    fracdev_prior=self.fracdev_prior,
-                                   fracdev_grid=fracdev_grid,
+                                   fracdev_grid=self.fracdev_grid,
                                    use_logpars=True)
+        """
+        boot=get_bootstrapper(self.psf_obs, self.gal_obs,
+                              fracdev_prior=self.fracdev_prior,
+                              fracdev_grid=self.fracdev_grid,
+                              type='composite')
         return boot
 
 
@@ -176,10 +179,11 @@ class ISampleFitter(LMFitter):
                     self.res['flags'] = PSF_FLUX_LOW 
                     continue
 
-                boot.fit_max(model,
-                             max_pars,
-                             prior=prior,
-                             ntry=max_pars['ntry'])
+                self._do_boot_fit_max(boot, model)
+                #boot.fit_max(model,
+                #             max_pars,
+                #             prior=prior,
+                #             ntry=max_pars['ntry'])
 
                 boot.isample(ipars, prior=prior)
 
@@ -275,12 +279,11 @@ class CompositeISampleFitter(ISampleFitter):
         self._set_fracdev_prior()
 
     def _get_bootstrapper(self):
-        fracdev_grid=self.conf.get('fracdev_grid',None)
-        boot=CompositeBootstrapper(self.psf_obs,
-                                   self.gal_obs,
-                                   fracdev_prior=self.fracdev_prior,
-                                   fracdev_grid=fracdev_grid,
-                                   use_logpars=True)
+        boot=get_bootstrapper(self.psf_obs, self.gal_obs,
+                              fracdev_prior=self.fracdev_prior,
+                              fracdev_grid=self.fracdev_grid,
+                              type='composite')
+
         return boot
 
 
@@ -289,10 +292,13 @@ class BestISampleFitter(ISampleFitter):
     ISampler using best of exp and dev
     """
     def _get_bootstrapper(self):
+        '''
         from .bootstrapper import BestBootstrapper
         boot=BestBootstrapper(self.psf_obs,
                               self.gal_obs,
                               use_logpars=True)
+        '''
+        boot=get_bootstrapper(self.psf_obs, self.gal_obs, type='best')
         return boot
 
 
@@ -359,3 +365,32 @@ class BestISampleFitter(ISampleFitter):
             self.res['flags'] = 2**(i+1)
 
 
+def get_bootstrapper(psf_obs, gal_obs, type='boot', **keys):
+    from .bootstrapper import Bootstrapper
+    from .bootstrapper import CompositeBootstrapper
+    from .bootstrapper import BestBootstrapper
+
+    use_logpars=True
+    if type=='boot':
+        #print("    loading bootstrapper")
+        boot=Bootstrapper(psf_obs,
+                          gal_obs,
+                          use_logpars=use_logpars)
+    elif type=='composite':
+        #print("    loading composite bootstrapper")
+        fracdev_prior = keys['fracdev_prior']
+        fracdev_grid  = keys['fracdev_grid']
+        boot=CompositeBootstrapper(psf_obs,
+                                   gal_obs,
+                                   fracdev_prior=fracdev_prior,
+                                   fracdev_grid=fracdev_grid,
+                                   use_logpars=use_logpars)
+    elif type=='boot': 
+        #print("    loading best bootstrapper")
+        boot=BestBootstrapper(self.psf_obs,
+                              self.gal_obs,
+                              use_logpars=use_logpars)
+    else:
+        raise ValueError("bad bootstrapper type: '%s'" % type)
+
+    return boot
