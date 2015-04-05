@@ -15,8 +15,9 @@ from argparse import ArgumentParser
 parser=ArgumentParser(__doc__)
 
 parser.add_argument('config_file', help='config file to read')
-parser.add_argument('cuts_file', help='cuts file name')
 parser.add_argument('model', help='model used for shear')
+parser.add_argument('outfile', help='where to write the results')
+parser.add_argument('cuts_files', nargs='+', help='cuts file name')
 
 parser.add_argument('--show', action='store_true', help='show plot on screen')
 
@@ -34,40 +35,50 @@ def main():
     args=parser.parse_args()
 
     config_file=args.config_file
-    cuts_config=args.cuts_file
+    cuts_configs=args.cuts_files
+    outfile=args.outfile
     model=args.model
 
     conf=yaml.load(open(config_file))
-    cuts=yaml.load(open(cuts_config))
 
+    print("writing to:",outfile)
 
-    conf['cut'] = cuts['cut']
+    with open(outfile,'w') as fobj:
+        head="%10s " * 10
+        head = head % ('s2n_min','Q','m+','m+_err','mx','mx_err','c+','c+_err','cx','cx_err')
+        fobj.write(head + '\n')
 
-    shfile=great3.files.get_shear_file(model=model, **conf)
+        for cuts_config in cuts_configs:
+            cuts=yaml.load(open(cuts_config))
 
-    truth_dir=great3.files.get_truth_dir(**conf)
-    storage_dir=great3.files.get_storage_dir()
-    
-    epsfile=get_epsfile(conf['run'],conf['cut'])
-    res = great3sims.metrics.evaluate.q_constant_err(shfile,
-                                                   conf['experiment'],
-                                                   conf['obs_type'],
-                                                   storage_dir=storage_dir,
-                                                   truth_dir=truth_dir,
-                                                   epsfile=epsfile,
-                                                   show=args.show,
-                                                   pretty_print=True)
-    
-    head="%10s " * len(res)
-    head = head % ('Q','m+','m+_err','mx','mx_err','c+','c+_err','cx','cx_err')
+            s2n_min = cuts['s2n_range'][0]
 
-    mess="%10.1f" + "%10.6f " * (len(res)-1)
-    mess=mess.strip()
-    mess=mess % (res['Q'],
-                 res['m1'],res['m1_err'],res['m2'],res['m2_err'],
-                 res['c1'],res['c1_err'],res['c2'],res['c2_err'])
+            conf['cut'] = cuts['cut']
 
-    print(head)
-    print(mess)
+            shfile=great3.files.get_shear_file(model=model, **conf)
 
+            truth_dir=great3.files.get_truth_dir(**conf)
+            storage_dir=great3.files.get_storage_dir()
+            
+            epsfile=get_epsfile(conf['run'],conf['cut'])
+            res = great3sims.metrics.evaluate.q_constant_err(shfile,
+                                                           conf['experiment'],
+                                                           conf['obs_type'],
+                                                           storage_dir=storage_dir,
+                                                           truth_dir=truth_dir,
+                                                           epsfile=epsfile,
+                                                           show=args.show,
+                                                           pretty_print=True)
+            
+
+            mess="%10d %10.1f " + ("%10.6f " * 8)
+            mess=mess.strip()
+            mess=mess % (s2n_min,
+                         res['Q'],
+                         res['m1'],res['m1_err'],res['m2'],res['m2_err'],
+                         res['c1'],res['c1_err'],res['c2'],res['c2_err'])
+
+            fobj.write(mess + '\n')
+
+    print("output in:",outfile)
 main()
