@@ -22,6 +22,46 @@ def get_config_file(run):
     fname='run-%s.yaml' % run
     return os.path.join(d,fname)
 
+def _load_yaml(fname):
+    import yaml
+    data=yaml.load(open(fname))
+    return data
+
+def read_config(run):
+    """
+    get the config directory
+    """
+    fname=get_config_file(run)
+
+    conf=_load_yaml(fname)
+
+    mess="mismatch between runs: '%s' vs '%s'" % (run,conf['run'])
+    assert conf['run']==run,mess
+
+    return conf
+
+def get_prior_config_file(name):
+    """
+    get the config directory
+    """
+    d=get_config_dir()
+    fname='prior-config-%s.yaml' % name
+    return os.path.join(d,fname)
+
+def read_prior_config(name):
+    """
+    get the config directory
+    """
+    fname=get_prior_config_file(name)
+
+    conf=_load_yaml(fname)
+
+    mess="mismatch between name: '%s' vs '%s'" % (name,conf['name'])
+    assert conf['name']==name,mess
+
+    return conf
+
+
 def read_config(run):
     """
     get the config directory
