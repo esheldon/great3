@@ -51,7 +51,10 @@ def main():
         for cuts_config in cuts_configs:
             cuts=yaml.load(open(cuts_config))
 
-            s2n_min = cuts['s2n_range'][0]
+            if 'Ts2n' in cuts['cut']:
+                s2n_min = cuts['Ts2n_min']
+            else:
+                s2n_min = cuts['s2n_range'][0]
 
             conf['cut'] = cuts['cut']
 
@@ -71,7 +74,7 @@ def main():
                                                            pretty_print=True)
             
 
-            mess="%10d %10.1f " + ("%10.6f " * 8)
+            mess="%10.2f %10.1f " + ("%10.6f " * 8)
             mess=mess.strip()
             mess=mess % (s2n_min,
                          res['Q'],

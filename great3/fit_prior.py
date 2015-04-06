@@ -121,18 +121,22 @@ def get_logic(data, model, prior_name):
     from esutil.numpy_util import between
 
     pconf=files.read_prior_config(prior_name)
-    pprint(pconf)
+    #pprint(pconf)
 
     n=Namer(model)
 
     T=data[n('pars')][:,4]
     F=data[n('pars')][:,5]
 
+    g=sqrt(  data[n('pars')][:,2]**2 
+           + data[n('pars')][:,3]**2 )
+
     Tr = pconf['T_range']
     Fr = pconf['F_range']
     logic = (
         between(T, Tr[0], Tr[1])
         & between(F, Fr[0], Fr[1])
+        & (g < GMAX )
     )
 
     if n('fracdev') in data.dtype.names:
@@ -728,7 +732,7 @@ def get_norm_hist(data, min=None, max=None, binsize=1):
     return hdict
 
 
-def fit_g_prior(run, model, type='exp', **keys):
+def fit_g_prior(run, model, prior_name, type='m-erf', **keys):
     """
     Fit only the g prior
     """
@@ -736,7 +740,7 @@ def fit_g_prior(run, model, type='exp', **keys):
     import biggles
     import mcmc
 
-    fl=read_field_list(run, model, **keys)
+    fl=read_field_list(run, model, prior_name, **keys)
     comb=make_combined_pars_subtract_mean_shape(fl)
 
     g=comb[:,0]
@@ -771,6 +775,14 @@ def fit_g_prior(run, model, type='exp', **keys):
                     hdict['hist_norm'],
                     show=True)
         return
+
+    elif type=='m-erf2':
+        prior=ngmix.priors.GPriorMErf2()
+        prior.dofit(hdict['center'],
+                    hdict['hist_norm'],
+                    show=True)
+        return
+
 
     elif type=='ba':
         prior=ngmix.priors.GPriorBA()
@@ -1124,7 +1136,7 @@ def fit_T(run, model, **keys):
 
     h=eu.stat.histogram
 
-def read_field_list(run, model, **keys):
+def read_field_list(run, model, prior_name, **keys):
     """
     read in results from a deep field
     """
@@ -1133,22 +1145,26 @@ def read_field_list(run, model, **keys):
 
     print("noshape:",noshape)
 
+    nsub=keys.get('nsub',None)
+    if nsub is None:
+        nsub=files.get_nsub(**conf)
+
     pars_name='%s_pars' % model
     s2n_name='%s_s2n_w' % model
     g_name='%s_g' % model
 
     field_list=[]
-    for subid in xrange(5):
+    for subid in xrange(nsub):
         conf['subid']=subid
         data=files.read_output(**conf)
 
-        g=sqrt( data[g_name][:,0]**2 + data[g_name][:,1]**2 )
-        w,=where( g < GMAX )
+        w=do_select(data,model,prior_name)
+        data=data[w]
 
         if noshape:
-            pars=data[pars_name][w,4:]
+            pars=data[pars_name][:,4:]
         else:
-            pars=data[pars_name][w,2:]
+            pars=data[pars_name][:,2:]
 
         field_list.append(pars)
 
