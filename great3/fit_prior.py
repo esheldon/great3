@@ -593,7 +593,7 @@ def fit_gmix(data, ngauss, n_iter, min_covar=MIN_COVAR):
 
     gmm=GMM(n_components=ngauss,
             n_iter=n_iter,
-            min_covar=MIN_COVAR,
+            min_covar=min_covar,
             covariance_type='full')
 
     gmm.fit(data)
@@ -646,9 +646,6 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
 
     tab.aspect_ratio=nrow/float(ncol)
 
-    if show:
-        tab.show()
-
     if eps:
         import converter
         print(eps)
@@ -657,6 +654,9 @@ def plot_fits(pars, samples, dolog=True, show=False, eps=None, par_labels=None):
             os.makedirs(d)
         tab.write_eps(eps)
         converter.convert(eps, verbose=True, dpi=200)
+
+    if show:
+        tab.show()
 
 def log_T_to_log_sigma(log_T):
     T = 10.0**log_T
