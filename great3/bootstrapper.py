@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import numpy
 from numpy import where, array, sqrt, exp, log, linspace, zeros
-from numpy import isfinite
+from numpy import isfinite, median
 
 import ngmix
 from ngmix import Observation
@@ -37,6 +37,129 @@ class Bootstrapper(object):
         if not hasattr(self,'max_fitter'):
             raise RuntimeError("you need to run fit_max successfully first")
         return self.max_fitter
+
+    def set_round_s2n(self, prior=None, ntry=4):
+        """
+        set the s/n and (s/n)_T for the round model
+
+        the s/n measure is stable, the size will require a prior and may
+        need retries
+        """
+
+        obs=self.gal_obs
+
+        max_fitter=self.get_max_fitter()
+        res=max_fitter.get_result()
+
+        pars, pars_lin = self._get_round_pars(res['pars'])
+
+        gm0_round = self._get_gmix_round(res, pars_lin)
+
+        gmpsf = obs.psf.gmix.copy()
+        gmpsf_round = gmpsf.make_round()
+
+        gm_round = gm0_round.convolve(gmpsf_round)
+
+        # first the overall s/n, this is stable
+        res['s2n_r'] = gm_round.get_model_s2n(obs)
+
+        # now the covariance matrix, which can be more unstable
+        cov=self._sim_cov_round(obs,
+                                gm_round, gmpsf_round,
+                                pars, res['model'],
+                                prior=prior,
+                                ntry=ntry)
+        if cov is None:
+            print("    failed to fit round (S/N)_T")
+            res['T_s2n_r'] = -9999.0
+        else:
+            if self.use_logpars:
+                Ts2n_round = sqrt(1.0/cov[4,4])
+            else:
+                Ts2n_round = pars_lin[4]/sqrt(cov[4,4])
+            res['T_s2n_r'] = Ts2n_round
+
+    def _get_gmix_round(self, res, pars):
+        gm_round = ngmix.GMixModel(pars, res['model'])
+        return gm_round
+
+    def _sim_cov_round(self,
+                       obs,
+                       gm_round, gmpsf_round,
+                       pars_round, model,
+                       prior=None,
+                       ntry=4):
+        """
+        gm_round is convolved
+        """
+        from numpy.linalg import LinAlgError
+        
+        im0=gm_round.make_image(obs.image.shape,
+                                jacobian=obs.jacobian)
+        
+        
+        # image here is not used
+        psf_obs = Observation(im0, gmix=gmpsf_round)
+
+        print("FIX NOISE FOR REAL DATA")
+        noise=1.0/sqrt( median(obs.weight) )
+
+        cov=None
+        for i in xrange(ntry):
+            nim = numpy.random.normal(scale=noise,
+                                      size=im0.shape)
+
+            im = im0 + nim
+            
+
+            newobs = Observation(im,
+                                 weight=obs.weight,
+                                 jacobian=obs.get_jacobian(),
+                                 psf=psf_obs)
+            
+            fitter=ngmix.fitting.LMSimple(newobs, model,
+                                          prior=prior,
+                                          use_logpars=self.use_logpars)
+
+            fitter._setup_data(pars_round)
+            try:
+                tcov=fitter.get_cov(pars_round, 1.0e-3, 5.0)
+                if tcov[4,4] > 0:
+                    cov=tcov
+                    break
+            except LinAlgError:
+                pass
+
+        return cov
+
+
+    def _get_round_pars(self, pars_in):
+        from ngmix.shape import get_round_factor
+
+        pars=pars_in.copy()
+        pars_lin=pars.copy()
+
+        if self.use_logpars:
+            pars_lin[4:4+2] = exp(pars[4:4+2])
+
+        g1,g2,T = pars_lin[2],pars_lin[3],pars_lin[4]
+
+        f = get_round_factor(g1, g2)
+        T = T*f
+
+        pars[2]=0.0
+        pars[3]=0.0
+        pars_lin[2]=0.0
+        pars_lin[3]=0.0
+        pars_lin[4]=T
+
+        if self.use_logpars:
+            pars[4] = log(T)
+        else:
+            pars[4] = T
+
+        return pars, pars_lin
+
 
     def get_isampler(self):
         """
@@ -205,6 +328,10 @@ class Bootstrapper(object):
         tres['model'] = maxres['model']
         tres['psf_flux']=self.psf_flux
         tres['psf_flux_err']=self.psf_flux_err
+
+        if 's2n_r' in maxres:
+            tres['s2n_r'] = maxres['s2n_r']
+            tres['T_s2n_r'] = maxres['T_s2n_r']
 
         self.isampler=sampler
 
@@ -438,6 +565,12 @@ class CompositeBootstrapper(Bootstrapper):
         fracdev_clipped = fracdev.clip(min=frange[0],max=frange[1])
         return fracdev_clipped
 
+
+    def _get_gmix_round(self, res, pars):
+        gm_round = ngmix.GMixCM(res['fracdev'],
+                                res['TdByTe'],
+                                res['model'])
+        return gm_round
 
 
     def isample(self, ipars, prior=None):
@@ -868,4 +1001,5 @@ class CompositeMaxRunner(MaxRunner):
                 break
 
         self.fitter=fitter
+
 
