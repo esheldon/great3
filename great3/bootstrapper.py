@@ -55,8 +55,7 @@ class Bootstrapper(object):
 
         gm0_round = self._get_gmix_round(res, pars_lin)
 
-        gmpsf = obs.psf.gmix.copy()
-        gmpsf_round = gmpsf.make_round()
+        gmpsf_round = obs.psf.gmix.make_round()
 
         gm_round = gm0_round.convolve(gmpsf_round)
 
@@ -69,6 +68,7 @@ class Bootstrapper(object):
                                 pars, res['model'],
                                 prior=prior,
                                 ntry=ntry)
+
         if cov is None:
             print("    failed to fit round (S/N)_T")
             res['T_s2n_r'] = -9999.0
@@ -101,7 +101,6 @@ class Bootstrapper(object):
         # image here is not used
         psf_obs = Observation(im0, gmix=gmpsf_round)
 
-        print("FIX NOISE FOR REAL DATA")
         noise=1.0/sqrt( median(obs.weight) )
 
         cov=None
@@ -895,7 +894,7 @@ class EMRunner(object):
 
 class MaxRunner(object):
     """
-    wrapper to generate guesses and run the psf fitter a few times
+    wrapper to generate guesses and run the fitter a few times
     """
     def __init__(self, obs, model, pars, guesser, prior=None, use_logpars=False):
         self.obs=obs
