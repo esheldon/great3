@@ -60,6 +60,7 @@ class Bootstrapper(object):
         gm_round = gm0_round.convolve(gmpsf_round)
 
         # first the overall s/n, this is stable
+        res['round_pars'] = pars
         res['s2n_r'] = gm_round.get_model_s2n(obs)
 
         # now the covariance matrix, which can be more unstable
