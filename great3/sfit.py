@@ -385,7 +385,7 @@ def get_bootstrapper(psf_obs, gal_obs, type='boot', **keys):
                                    fracdev_prior=fracdev_prior,
                                    fracdev_grid=fracdev_grid,
                                    use_logpars=use_logpars)
-    elif type=='boot': 
+    elif type=='best': 
         #print("    loading best bootstrapper")
         boot=BestBootstrapper(self.psf_obs,
                               self.gal_obs,

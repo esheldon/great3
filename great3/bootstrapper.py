@@ -1,3 +1,6 @@
+"""
+"""
+
 from __future__ import print_function
 
 import numpy
@@ -7,6 +10,7 @@ from numpy import isfinite, median
 import ngmix
 from ngmix import Observation
 from .generic import srandu, PSFFailure, GalFailure
+from ngmix.gexceptions import GMixRangeError
 
 
 class Bootstrapper(object):
@@ -66,7 +70,7 @@ class Bootstrapper(object):
         # now the covariance matrix, which can be more unstable
         cov=self._sim_cov_round(obs,
                                 gm_round, gmpsf_round,
-                                pars, res['model'],
+                                res, pars,
                                 prior=prior,
                                 ntry=ntry)
 
@@ -87,7 +91,7 @@ class Bootstrapper(object):
     def _sim_cov_round(self,
                        obs,
                        gm_round, gmpsf_round,
-                       pars_round, model,
+                       res, pars_round,
                        prior=None,
                        ntry=4):
         """
@@ -117,11 +121,14 @@ class Bootstrapper(object):
                                  jacobian=obs.get_jacobian(),
                                  psf=psf_obs)
             
-            fitter=ngmix.fitting.LMSimple(newobs, model,
-                                          prior=prior,
-                                          use_logpars=self.use_logpars)
+            fitter=self._get_round_fitter(newobs, res, prior=prior)
 
-            fitter._setup_data(pars_round)
+            # we can't recover from this error
+            try:
+                fitter._setup_data(pars_round)
+            except GMixRangeError:
+                break
+
             try:
                 tcov=fitter.get_cov(pars_round, 1.0e-3, 5.0)
                 if tcov[4,4] > 0:
@@ -132,6 +139,11 @@ class Bootstrapper(object):
 
         return cov
 
+    def _get_round_fitter(self, obs, res, prior=None):
+        fitter=ngmix.fitting.LMSimple(obs, res['model'],
+                                      prior=prior,
+                                      use_logpars=self.use_logpars)
+        return fitter
 
     def _get_round_pars(self, pars_in):
         from ngmix.shape import get_round_factor
@@ -454,7 +466,6 @@ class CompositeBootstrapper(Bootstrapper):
         """
         fit the galaxy.  You must run fit_psf() successfully first
         """
-        from ngmix.gexceptions import GMixRangeError
 
         assert model=='cm','model must be cm'
         #assert extra_priors != None,"send extra_priors="
@@ -567,10 +578,20 @@ class CompositeBootstrapper(Bootstrapper):
 
 
     def _get_gmix_round(self, res, pars):
-        gm_round = ngmix.GMixCM(res['fracdev'],
-                                res['TdByTe'],
-                                res['model'])
+        gm_round = ngmix.gmix.GMixCM(res['fracdev'],
+                                     res['TdByTe'],
+                                     pars)
         return gm_round
+
+    def _get_round_fitter(self, obs, res, prior=None):
+        fitter=ngmix.fitting.LMComposite(obs,
+                                         res['fracdev'],
+                                         res['TdByTe'],
+                                         prior=prior,
+                                         use_logpars=self.use_logpars)
+
+        return fitter
+
 
 
     def isample(self, ipars, prior=None):
@@ -584,6 +605,7 @@ class CompositeBootstrapper(Bootstrapper):
         ires['fracdev_err']=maxres['fracdev_err']
         ires['psf_flux']=maxres['psf_flux']
         ires['psf_flux_err']=maxres['psf_flux_err']
+        ires['round_pars']=maxres['round_pars']
 
     def _fit_fracdev(self, exp_fitter, dev_fitter, use_grid=False):
         from ngmix.fitting import FracdevFitter, FracdevFitterMax
@@ -695,7 +717,6 @@ class BestBootstrapper(Bootstrapper):
         """
         fit the galaxy.  You must run fit_psf() successfully first
         """
-        from ngmix.gexceptions import GMixRangeError
 
         if not hasattr(self,'psf_flux'):
             self.fit_gal_psf_flux()
