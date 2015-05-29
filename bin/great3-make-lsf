@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+"""
+    %prog config_file
+"""
+from __future__ import print_function
+
+import sys
+import os
+import yaml
+
+import great3
+from great3 import files
+
+from argparse import  ArgumentParser
+parser=ArgumentParser(__doc__)
+
+parser.add_argument('config_file',help='config file locatioin')
+parser.add_argument('--queue',default='long', help="queue to run in ")
+parser.add_argument('--missing',action='store_true', help="only write for missing")
+
+
+_lsf_template="""#!/bin/bash
+#BSUB -q %(queue)s
+#BSUB -J %(job_name)s
+#BSUB -n 1
+#BSUB -oo ./%(job_name)s.oe
+#BSUB -W 04:00
+#BSUB -R "linux64 && rhel60 && scratch > 2"
+
+echo "working on host: $(hostname)"
+
+%(master_script)s %(subid)s %(first)s %(last)s %(logfile)s
+"""
+
+
+
+_master_template="""#!/bin/bash
+
+function rungreat {
+    echo "host: $(hostname)"
+
+    . ~/g3work1-setup.sh
+
+    great3-run --obj-range ${first},${last} ${config} ${subid}
+    status=$?
+
+    if [[ $status != "0" ]]; then
+        echo "error running great3: $status"
+    fi
+
+    return $status
+}
+
+
+subid=$1
+first=$2
+last=$3
+logfile=$4
+
+config="%(config)s"
+
+# temporary log file, to be transferred later
+tmpdir=$TMPDIR/great3-tmp-$RANDOM-$RANDOM
+mkdir -p $tmpdir
+
+cd $tmpdir
+
+tmplog=$(basename $logfile)
+
+rungreat &> ${tmplog}
+status=$?
+
+echo "moving log file ${tmplog} -> ${logfile}" >> ${tmplog}
+
+# errors go to the jobs stderr
+mv -fv "${tmplog}" "${logfile}" 1>&2
+
+status2=$?
+
+if [[ $status2 != "0" ]]; then
+    # this error message will go to main error file
+    echo "error ${status2} moving log to: ${logfile}" 1>&2
+
+    status=$status2
+fi
+
+rm -rv $tmpdir
+
+exit $status
+"""
+
+def write_lsf_files(conf, missing=False):
+
+    run=conf['run']
+
+    seconds_per=conf['sec_per']
+    nper=conf['nper']
+    time_hours = nper*seconds_per/3600.0
+
+    print('seconds per:',seconds_per)
+    print('nper:',nper)
+    print('time hours:',time_hours)
+
+    low,high = files.get_chunk_ranges(nper)
+
+    # number of sub-fields
+    nsub=files.get_nsub(**conf)
+    print("nsub:",nsub)
+
+    for subid in xrange(nsub):
+
+        for first,last in zip(low,high):
+
+            conf['subid'] = subid
+            conf['first'] = first
+            conf['last'] = last
+            conf['obj_range'] = [first, last]
+
+            output = files.get_output_file(**conf)
+
+            if (not missing) or (missing and not os.path.exists(output)):
+
+                logfile = output.replace('.fits','.log')
+
+                job_name='%s-%03d-%04d-%04d' % (run,subid,first,last)
+
+                conf['logfile'] = logfile
+                conf['job_name'] = job_name
+
+                lsffile = files.get_lsf_file(**conf)
+
+                if missing:
+                    lsffile=lsffile.replace('.lsf','-missing.lsf')
+
+                print(lsffile)
+                with open(lsffile,'w') as fobj:
+                    lsftext=_lsf_template % conf
+                    fobj.write(lsftext)
+
+
+def write_master(config_filename, conf):
+
+    master_script=files.get_master_script_file(**conf)
+
+    conf['config'] = config_filename
+    print(master_script)
+    with open(master_script,'w') as fobj:
+        fobj.write(_master_template % conf)
+    print()
+
+    os.system('chmod 755 %s' % master_script)
+    return master_script
+
+def make_some_dirs(conf):
+    output_dir=files.get_output_dir(**conf)
+    condor_dir=files.get_condor_dir(**conf)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    if not os.path.exists(condor_dir):
+        os.makedirs(condor_dir)
+
+def main():
+
+    args = parser.parse_args()
+
+    config_filename=args.config_file
+
+    conf = yaml.load(open(config_filename))
+
+    conf['queue'] = args.queue
+
+    make_some_dirs(conf)
+    conf['master_script']=write_master(config_filename, conf)
+
+    write_lsf_files(conf, missing=args.missing)
+
+main()
