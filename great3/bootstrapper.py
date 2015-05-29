@@ -209,7 +209,7 @@ class Bootstrapper(object):
 
 
 
-    def fit_psf(self, psf_model, Tguess=None, ntry=4):
+    def fit_psf(self, psf_model, Tguess=None, ntry=4, **keys):
         """
         fit the psf using a PSFRunner or EMRunner
 
@@ -218,9 +218,9 @@ class Bootstrapper(object):
         assert Tguess is not None,"send a Tguess"
 
         if 'em' in psf_model:
-            runner=self._fit_psf_em(psf_model, Tguess, ntry)
+            runner=self._fit_psf_em(psf_model, Tguess, ntry, **keys)
         else:
-            runner=self._fit_psf_max(psf_model, Tguess, ntry)
+            runner=self._fit_psf_max(psf_model, Tguess, ntry, **keys)
 
         psf_fitter = runner.fitter
         res=psf_fitter.get_result()
@@ -235,11 +235,13 @@ class Bootstrapper(object):
         else:
             raise PSFFailure("failed to fit psf")
 
-    def _fit_psf_em(self, psf_model, Tguess, ntry):
+    def _fit_psf_em(self, psf_model, Tguess, ntry, em_pars=None):
         from .nfit import get_em_ngauss
 
         ngauss=get_em_ngauss(psf_model)
-        em_pars={'tol': 5.0e-6, 'maxiter': 50000}
+
+        if em_pars is None:
+            em_pars={'tol': 5.0e-6, 'maxiter': 50000}
 
         runner=EMRunner(self.psf_obs, Tguess, ngauss, em_pars)
         runner.go(ntry=ntry)
@@ -823,6 +825,8 @@ class EMRunner(object):
             return self._get_em_guess_2gauss()
         elif self.ngauss==3:
             return self._get_em_guess_3gauss()
+        elif self.ngauss==4:
+            return self._get_em_guess_4gauss()
         else:
             raise ValueError("bad ngauss: %d" % self.ngauss)
 
@@ -885,6 +889,45 @@ class EMRunner(object):
                      _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
                      0.01*srandu(),
                      _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu())]
+
+                  )
+
+
+        return ngmix.gmix.GMix(pars=pars)
+
+    def _get_em_guess_4gauss(self):
+        from .nfit import _em3_pguess, _em3_fguess
+
+        sigma2 = self.sigma_guess**2
+
+        pars=array( [_em3_pguess[0]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[0]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[1]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[1]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[2]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+
+                     _em3_pguess[2]*(1.0+0.1*srandu()),
+                     0.1*srandu(),
+                     0.1*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu()),
+                     0.01*srandu(),
+                     _em3_fguess[2]*sigma2*(1.0 + 0.1*srandu())]
+
 
                   )
 
