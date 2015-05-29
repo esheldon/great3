@@ -665,6 +665,34 @@ def get_wq_file(**keys):
 
     return os.path.join(d, fname)
 
+def get_lsf_file(**keys):
+    """
+    Get the lsf file
+
+    parameters
+    ----------
+    run: string
+        Required keyword.  run id
+    obj_range: [low,high]
+        Objects to process
+    missing: bool
+        for missing outputs
+    """
+
+    missing=keys.get('missing',False)
+
+    d=get_condor_dir(**keys)
+
+    fname='%(run)s' % keys
+
+    if missing:
+        fname += '-missing'
+
+    first,last=keys['obj_range']
+    fname = fname+'-%(subid)03d-%(first)04d-%(last)04d.lsf' % keys
+
+    return os.path.join(d, fname)
+
 
 def get_master_script_file(**keys):
     """

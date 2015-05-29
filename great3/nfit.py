@@ -10,9 +10,6 @@ from . import files
 from . import joint_prior
 from .generic import *
 from .constants import *
-from .bootstrapper import Bootstrapper, CompositeBootstrapper
-
-
 
 class NGMixFitter(FitterBase):
     def _process_object(self, sub_index):
@@ -1090,14 +1087,13 @@ class NGMixFitter(FitterBase):
 
         print("    model:",model)
         res=self.res[model]['res']
+        rres=self.res[model]['round_res']
         print_pars(res['pars'],     front="        pars: ")
         print_pars(res['pars_err'], front="        err:  ")
  
-        mess='        s/n: %(s2n_w).1f chi2per: %(chi2per).2f'
-        if 'arate' in res:
-            mess='%s arate: %(arate).2f'
+        mess='        s2n: %.1f s2n_r: %.1f chi2per: %.2f'
 
-        mess=mess % res
+        mess=mess % (res['s2n_w'], rres['s2n_r'], res['chi2per'])
         print(mess)
 
     def _print_psf_res(self):
@@ -1201,10 +1197,10 @@ class NGMixFitter(FitterBase):
 
             for model in self.conf['model_pars']:
                 if model in res:
-                    model_res=res[model]['res']
+                    model_res=res[model]
                     self._copy_pars(sub_index, model, model_res)
 
-    def _copy_pars(self, sub_index, model, res):
+    def _copy_pars(self, sub_index, model, model_res):
         """
         Copy from the result dict to the output array
         """
@@ -1213,14 +1209,18 @@ class NGMixFitter(FitterBase):
 
         n=Namer(model)
 
+        res=model_res['res']
+        pres=model_res['pres']
+        rres=model_res['round_res']
+
         pars=res['pars']
         pars_cov=res['pars_cov']
 
         if model=='best':
             self.data['best_model'][sub_index] = res['model']
 
-        self.data['psf_flux'][sub_index] = res['psf_flux']
-        self.data['psf_flux_err'][sub_index] = res['psf_flux_err']
+        self.data['psf_flux'][sub_index] = pres['psf_flux'][0]
+        self.data['psf_flux_err'][sub_index] = pres['psf_flux_err'][0]
 
         # assuming log(T) and log(F)
         T = pars[4]
@@ -1242,6 +1242,12 @@ class NGMixFitter(FitterBase):
 
         self.data[n('g')][sub_index,:] = res['g']
         self.data[n('g_cov')][sub_index,:,:] = res['g_cov']
+
+        self.data[n('flags_r')][sub_index] = rres['flags']
+        self.data[n('s2n_r')][sub_index] = rres['s2n_r']
+        self.data[n('T_s2n_r')][sub_index] = rres['T_s2n_r']
+        self.data[n('log_T_r')][sub_index] = rres['pars'][4]
+        self.data[n('psf_T_r')][sub_index] = rres['psf_T_r']
 
         if model=='cm' and 'fracdev' in res:
             self.data[n('TdByTe')][sub_index] = res['TdByTe']
@@ -1332,6 +1338,12 @@ class NGMixFitter(FitterBase):
                  (n('arate'),'f8'),
                  (n('tau'),'f8'),
                  (n('efficiency'),'f8'),
+
+                 ( n('flags_r'),'f8'),
+                 ( n('s2n_r'),'f8'),
+                 ( n('log_T_r'),'f8'),
+                 ( n('T_s2n_r'),'f8'),
+                 ( n('psf_T_r'),'f8'),
                 ]
 
             if model=='best':
