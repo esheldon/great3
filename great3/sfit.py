@@ -5,6 +5,8 @@ from .generic import *
 from .constants import *
 from .nfit import *
 
+from ngmix.bootstrap import BootGalFailure, BootPSFFailure
+
 class LMFitter(NGMixFitter):
     def _process_object(self, sub_index):
         """
@@ -17,7 +19,7 @@ class LMFitter(NGMixFitter):
 
         try:
             self._dofits()
-        except PSFFailure:
+        except BootPSFFailure:
             self.res['flags'] = PSF_FIT_FAILURE
 
         self._copy_to_output(sub_index, self.res)
@@ -74,7 +76,7 @@ class LMFitter(NGMixFitter):
                     self._do_gal_plots(model, fitter)
 
 
-            except GalFailure:
+            except BootGalFailure:
                 print("failed to fit galaxy with model: %s" % model)
                 self.res['flags'] = 2**(i+1)
 
@@ -168,6 +170,7 @@ class ISampleFitter(LMFitter):
 
         max_pars=self.conf['max_pars']
         ipars=self.conf['isample_pars']
+        rpars=self.conf['round_pars']
 
         models=list(self.conf['model_pars'].keys())
         for i,model in enumerate(models):
@@ -187,8 +190,8 @@ class ISampleFitter(LMFitter):
                 boot.isample(ipars, prior=prior)
 
                 boot.set_round_s2n(self.conf['max_pars'],
-                                   method='sim',
-                                   fitter_type='isample')
+                                   method=rpars['method'],
+                                   fitter_type=rpars['fitter_type'])
                 rres=boot.get_round_result()
 
 
@@ -208,7 +211,7 @@ class ISampleFitter(LMFitter):
                     self._compare_gal(model, boot.max_fitter)
                     self._make_trials_plot(model, sampler)
 
-            except GalFailure:
+            except BootGalFailure:
                 print("failed to fit galaxy with model: %s" % model)
                 self.res['flags'] = 2**(i+1)
 
