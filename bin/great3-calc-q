@@ -49,16 +49,20 @@ def main():
         fobj.write(head + '\n')
 
         for cuts_config in cuts_configs:
+            print("reading:",cuts_config)
             cuts=yaml.load(open(cuts_config))
 
             if 'Ts2n' in cuts['cut']:
                 s2n_min = cuts['Ts2n_min']
-            else:
+            elif 's2n_range' in cuts:
                 s2n_min = cuts['s2n_range'][0]
+            elif 's2n_r_range' in cuts:
+                s2n_min = cuts['s2n_r_range'][0]
 
             conf['cut'] = cuts['cut']
 
             shfile=great3.files.get_shear_file(model=model, **conf)
+            print("shear file:",shfile)
 
             truth_dir=great3.files.get_truth_dir(**conf)
             storage_dir=great3.files.get_storage_dir()

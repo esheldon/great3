@@ -36,6 +36,15 @@ def ring_select(logic):
     w.sort()
     return w
 
+def odd_select(logic):
+
+    iodd  = numpy.arange(1,logic.size,2)
+
+    wodd, = numpy.where(  logic[iodd]  )
+
+    return iodd[wodd]
+
+
 def get_finite_logic(data, model):
     """
     isfinite checks for both nan and inf
@@ -105,6 +114,7 @@ def do_nfit_select(data, conf, cuts):
 
         logic = logic & s2n_logic
 
+
     if 'Ts2n_min' in cuts:
         Ts2n_min=cuts['Ts2n_min']
         print("doing Ts2n >",Ts2n_min)
@@ -137,11 +147,18 @@ def do_sfit_select(data, conf, cuts, model):
 
     n=Namer(model)
 
-    logic = data['flags'] == 0
+    logic = (  (data['flags'] == 0)
+             & isfinite(data[n('g')][:,0])
+             & isfinite(data[n('g')][:,1])
+             & isfinite(data[n('g_sens')][:,0])
+             & isfinite(data[n('g_sens')][:,1])
+             & isfinite(data[n('g_cov')][:,0,0])
+             & isfinite(data[n('g_cov')][:,0,1])
+             & isfinite(data[n('g_cov')][:,1,1]) )
 
     w,=where(logic)
     if w.size != data.size:
-        print("found %d/%d with flags==0" % (w.size,data.size))
+        print("found %d/%d with flags==0 and finite" % (w.size,data.size))
 
     model_flag_logic = (data[n('flags')]==0)
     w,=where(model_flag_logic)
@@ -195,6 +212,18 @@ def do_sfit_select(data, conf, cuts, model):
             print(mess % (w.size,data.size,s2nr[0],s2nr[1]))
 
         logic = logic & elogic
+
+    if 's2n_r_range' in cuts:
+        s2nr = cuts['s2n_r_range']
+        s2n_logic = (  (data[n('s2n_r')] > s2nr[0])
+                     & (data[n('s2n_r')] < s2nr[1]) )
+        w,=where(s2n_logic)
+        if w.size != data.size:
+            print("found %d/%d s2n_r in [%s,%s]" % (w.size,data.size,s2nr[0],s2nr[1]))
+
+        logic = logic & s2n_logic
+
+
 
     if 'chi2per_range' in cuts:
         chi2per=data[n('chi2per')]
@@ -297,7 +326,13 @@ def do_sfit_select(data, conf, cuts, model):
         logic = logic & tmp_logic
 
 
-    w=ring_select(logic)
+    if cuts['select_type']=='ring':
+        w=ring_select(logic)
+    elif cuts['select_type']=='odd':
+        w=odd_select(logic)
+    else:
+        raise  ValueError("bad select type: '%s'" % cuts['select_type'])
+
     if w.size != data.size:
         print("kept %d/%d" % (w.size,data.size))
     return w
@@ -314,7 +349,6 @@ def get_weights(data, model, conf):
         name=n('g_cov')
         weights=1.0/(  2*SN**2
                      + data[name][:,0,0]
-                     + 2*data[name][:,0,1] + 
                      + data[name][:,1,1] )
     elif conf['use_weights']=='Ts2n':
         #softening=conf['softening']
@@ -354,11 +388,16 @@ def do_calc_mean_shear(conf, cuts, subid, model, with_psf=False):
                 chunksize=1
             print("jackknife size:",chunksize)
 
+            g = data[n('g')][w,:].copy()
             g_sens = data[n('g_sens')][w,:].copy()
+            #w,=where( isfinite(g_sens[:,0]) & isfinite(g_sens[:,1])
+            #         & isfinite(g[:,0]) & isfinite(g[:,1]) )
+            #if w.size != g_sens.shape[0]:
+            #    raise RuntimeError("bad")
             g_sens_mean=g_sens.mean(axis=1)
             g_sens[:,0] = g_sens_mean
             g_sens[:,1] = g_sens_mean
-            shear, shear_cov = lensfit_jackknife(data[n('g')][w,:],
+            shear, shear_cov = lensfit_jackknife(g,
                                                  g_sens,
                                                  weights=wts,
                                                  chunksize=chunksize)
@@ -424,7 +463,10 @@ def main():
     conf=yaml.load(open(config_file))
 
     for cuts_config in cuts_configs:
+        print("loading:",cuts_config)
         cuts=yaml.load(open(cuts_config))
+
+        cuts['select_type'] = cuts.get('select_type','ring')
 
         nsub=files.get_nsub(**conf)
 
@@ -437,7 +479,7 @@ def main():
         nkeep=0
         with open(outname,'w') as fobj:
             for subid in xrange(nsub):
-                res=do_calc_mean_shear(conf, cuts, subid, model, 
+                res=do_calc_mean_shear(conf, cuts, subid, model,
                                        with_psf=with_psf)
 
                 if with_psf:
