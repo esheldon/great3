@@ -6,8 +6,9 @@ from pprint import pprint
 import ngmix
 from ngmix import Observation, DiagonalJacobian
 
-from . import files
 from . import joint_prior
+
+from . import files
 from .generic import *
 from .constants import *
 
@@ -1156,8 +1157,9 @@ class NGMixFitter(FitterBase):
                 cen_prior=get_cen_prior(mpars['cen_prior_type'],
                                         pars=mpars['cen_prior_pars'])
 
+                g_prior_pars=mpars.get('g_prior_pars',None)
                 g_prior=get_g_prior(mpars['g_prior_type'],
-                                    pars=mpars['g_prior_pars'])
+                                    pars=g_prior_pars)
                 T_prior=get_T_prior(mpars['T_prior_type'],
                                     pars=mpars['T_prior_pars'])
                 counts_prior=get_counts_prior(mpars['counts_prior_type'],
@@ -1413,7 +1415,6 @@ def get_shear(data, model):
     return res
 
 def get_joint_prior(conf):
-    from . import joint_prior
     raise RuntimeError("adapt to new joint prior system")
 
     jptype = conf.get('joint_prior_type',None)
@@ -1459,7 +1460,9 @@ def get_counts_prior(typ, pars=None):
 
 def get_g_prior(typ, pars=None):
 
-    if typ =='exp':
+    if typ=='great-des':
+        g_prior=joint_prior.get_g_prior('great-des',g_prior_pars=pars)
+    elif typ =='exp':
         parr=array(pars,dtype='f8')
         g_prior = ngmix.priors.GPriorM(parr)
     elif typ=='cosmos-galfit':
