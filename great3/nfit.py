@@ -1100,7 +1100,7 @@ class NGMixFitter(FitterBase):
     def _print_psf_res(self):
         g1,g2,T=self.res['psf_gmix'].get_g1g2T()
         fwhm=sqrt(self.res['psf_gmix'].get_T()/2.0)*2.35
-        print("    psf fwhm: %.3g g: %.3g %.3g" % (fwhm,g1,g2))
+        print("    psf fwhm: %.g g: %.g %.g" % (fwhm,g1,g2))
 
 
     def _finish_setup(self):
