@@ -1247,7 +1247,6 @@ class NGMixFitter(FitterBase):
 
         self.data[n('flags_r')][sub_index] = rres['flags']
         self.data[n('s2n_r')][sub_index] = rres['s2n_r']
-        self.data[n('T_s2n_r')][sub_index] = rres['T_s2n_r']
         self.data[n('log_T_r')][sub_index] = rres['pars'][4]
         self.data[n('psf_T_r')][sub_index] = rres['psf_T_r']
 
@@ -1344,7 +1343,6 @@ class NGMixFitter(FitterBase):
                  ( n('flags_r'),'f8'),
                  ( n('s2n_r'),'f8'),
                  ( n('log_T_r'),'f8'),
-                 ( n('T_s2n_r'),'f8'),
                  ( n('psf_T_r'),'f8'),
                 ]
 

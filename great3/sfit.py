@@ -43,6 +43,8 @@ class LMFitter(NGMixFitter):
         self.res['psf_gmix'] = boot.mb_obs_list[0][0].psf.get_gmix()
         self._print_psf_res()
 
+        rpars=self.conf['round_pars']
+
         if self.make_plots:
             self._compare_psf(boot.psf_fitter, self.conf['psf_model'])
 
@@ -60,8 +62,8 @@ class LMFitter(NGMixFitter):
                 self._do_boot_fit_max(boot, model)
 
                 boot.set_round_s2n(self.conf['max_pars'],
-                                   method='sim',
-                                   fitter_type='max')
+                                   fitter_type=rpars['fitter_type'])
+
                 rres=boot.get_round_result()
 
                 fitter=boot.get_max_fitter()
@@ -190,7 +192,6 @@ class ISampleFitter(LMFitter):
                 boot.isample(ipars, prior=prior)
 
                 boot.set_round_s2n(self.conf['max_pars'],
-                                   method=rpars['method'],
                                    fitter_type=rpars['fitter_type'])
                 rres=boot.get_round_result()
 
